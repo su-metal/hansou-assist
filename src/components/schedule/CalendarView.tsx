@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import Link from 'next/link'
 
 type Rokuyo = {
     date: string
@@ -32,6 +33,7 @@ type Schedule = {
     date: string
     slot_type: '葬儀' | '通夜'
     status: 'available' | 'occupied' | 'preparing'
+    ceremony_time?: string
 }
 
 type CalendarMode = 'week' | 'month'
@@ -108,7 +110,8 @@ export function CalendarView() {
             hall_id,
             date,
             slot_type,
-            status
+            status,
+            ceremony_time
         `)
                 .gte('date', startDateStr)
                 .lte('date', endDateStr)
@@ -165,8 +168,10 @@ export function CalendarView() {
         setCurrentDate(new Date())
     }
 
-    const getSchedule = (hallId: string, dateStr: string) => {
-        return schedules.find(s => s.hall_id === hallId && s.date === dateStr);
+    const getSchedules = (hallId: string, dateStr: string) => {
+        return schedules
+            .filter(s => s.hall_id === hallId && s.date === dateStr)
+            .sort((a, b) => (a.ceremony_time || '').localeCompare(b.ceremony_time || ''));
     }
 
     return (
@@ -193,11 +198,11 @@ export function CalendarView() {
                 </ToggleGroup>
             </div>
 
-            <div className="overflow-x-auto border rounded-md">
-                <table className="w-full text-sm text-left border-collapse">
+            <div className="relative overflow-x-auto border rounded-md">
+                <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="bg-muted text-muted-foreground">
                         <tr>
-                            <th className="p-2 border font-medium min-w-[150px] sticky left-0 bg-muted z-10 text-center">
+                            <th className="p-2 border-b border-r sticky left-0 bg-muted z-30 font-medium min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] text-center shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                 ホール / 日付
                             </th>
                             {days.map((day) => {
@@ -234,42 +239,58 @@ export function CalendarView() {
                             facilities.map(facility => (
                                 <React.Fragment key={facility.id}>
                                     <tr className="bg-secondary/50">
-                                        <td colSpan={days.length + 1} className="p-2 border font-bold sticky left-0 bg-secondary/50 z-10 text-center sm:text-left">
-                                            {facility.name}
+                                        <td colSpan={days.length + 1} className="border-b bg-secondary/80 p-0">
+                                            <div className="sticky left-0 w-max px-3 py-2 font-bold z-20 text-left">
+                                                {facility.name}
+                                            </div>
                                         </td>
                                     </tr>
                                     {facility.halls.map(hall => (
                                         <tr key={hall.id}>
-                                            <td className="p-2 border font-medium sticky left-0 bg-background z-10 truncate text-gray-700 dark:text-gray-300">
+                                            <td className="p-2 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-medium truncate text-gray-700 dark:text-gray-300 min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                                 {hall.name}
                                             </td>
                                             {days.map(day => {
                                                 const dateStr = format(day, 'yyyy-MM-dd')
-                                                const schedule = getSchedule(hall.id, dateStr)
+                                                const daySchedules = getSchedules(hall.id, dateStr)
                                                 const rokuyo = rokuyoData[dateStr]
                                                 const isTomobiki = rokuyo?.is_tomobiki
 
                                                 return (
-                                                    <td key={dateStr} className={`p-2 border relative h-[80px] ${isTomobiki ? 'bg-gray-100 dark:bg-gray-900/50' : ''}`}>
+                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] vertical-top ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''}`}>
                                                         {isTomobiki && (
-                                                            <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none">
-                                                                <span className="text-2xl font-bold text-red-500 -rotate-12 whitespace-nowrap">友引</span>
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none">
+                                                                <span className="text-xl font-bold text-red-500 -rotate-12 whitespace-nowrap">友引</span>
                                                             </div>
                                                         )}
 
-                                                        {schedule ? (
-                                                            <div className={`
-                                                        w-full h-full rounded p-1 text-xs font-medium text-white flex flex-col justify-center items-center text-center gap-1
-                                                        ${schedule.status === 'occupied' ? 'bg-red-500' : schedule.status === 'preparing' ? 'bg-yellow-500' : 'bg-green-500'}
-                                                     `}>
-                                                                <span>{schedule.status === 'occupied' ? '使用中' : schedule.status === 'preparing' ? '準備中' : '空き'}</span>
-                                                                <span className="opacity-80 text-[10px]">{schedule.slot_type}</span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                                                -
-                                                            </div>
-                                                        )}
+                                                        <div className="flex flex-col gap-1">
+                                                            {daySchedules.map(schedule => (
+                                                                <Link
+                                                                    href={`/schedule/${schedule.id}`}
+                                                                    key={schedule.id}
+                                                                    className={`
+                                                                        block rounded px-1.5 py-0.5 text-[11px] font-medium text-white truncate
+                                                                        ${schedule.status === 'occupied' ? 'bg-red-500 hover:bg-red-600' :
+                                                                            schedule.status === 'preparing' ? 'bg-amber-500 hover:bg-amber-600' :
+                                                                                'bg-emerald-500 hover:bg-emerald-600'}
+                                                                        transition-colors
+                                                                    `}
+                                                                    title={`${schedule.ceremony_time} ${schedule.slot_type}`}
+                                                                >
+                                                                    <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>
+                                                                    {schedule.slot_type === '通夜' ? '通' : '葬'}
+                                                                </Link>
+                                                            ))}
+
+                                                            {/* New Reservation Link */}
+                                                            <Link
+                                                                href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}`}
+                                                                className="opacity-0 hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 rounded transition-all"
+                                                            >
+                                                                ＋ 予約
+                                                            </Link>
+                                                        </div>
                                                     </td>
                                                 )
                                             })}

@@ -2,7 +2,7 @@
 import { ScheduleList } from '@/components/schedule/schedule-list'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Camera } from 'lucide-react'
 
 export default function SchedulePage() {
     return (
@@ -14,12 +14,20 @@ export default function SchedulePage() {
                         各ホールの稼働状況を確認できます。
                     </p>
                 </div>
-                <Button asChild>
-                    <Link href="/schedule/new">
-                        <Plus className="mr-2 h-4 w-4" />
-                        新規登録
-                    </Link>
-                </Button>
+                <div className="flex gap-2">
+                    <Button asChild variant="outline">
+                        <Link href="/camera">
+                            <Camera className="mr-2 h-4 w-4" />
+                            OCR登録
+                        </Link>
+                    </Button>
+                    <Button asChild>
+                        <Link href="/schedule/new">
+                            <Plus className="mr-2 h-4 w-4" />
+                            新規登録
+                        </Link>
+                    </Button>
+                </div>
             </div>
             <ScheduleList />
         </div>

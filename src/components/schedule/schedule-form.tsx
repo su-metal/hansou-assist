@@ -6,8 +6,9 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react"
+import { Calendar as CalendarIcon, Loader2, X } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -26,9 +27,12 @@ import {
     SelectTrigger,
     SelectValue,
     SelectLabel,
+    SelectGroup,
 } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
+// ... imports
 
 interface Hall {
     id: string;
@@ -41,14 +45,30 @@ interface Facility {
     halls: Hall[];
 }
 
+interface ScheduleFormProps {
+    scheduleId?: string
+    initialData?: {
+        date?: string
+        ceremony_time?: string
+        hall_id?: string
+        slot_type?: "葬儀" | "通夜"
+        status?: "available" | "occupied" | "preparing"
+        family_name?: string
+        remarks?: string
+    }
+}
+
 const formSchema = z.object({
     date: z.string().min(1, "日付を選択してください"),
+    ceremony_time: z.string().min(1, "開始時刻を入力してください"),
     hall_id: z.string().min(1, "ホールを選択してください"),
     slot_type: z.enum(["葬儀", "通夜"]),
     status: z.enum(["available", "occupied", "preparing"]),
+    family_name: z.string().min(1, "喪家名を入力してください"),
+    remarks: z.string().optional(),
 })
 
-export function ScheduleForm() {
+export function ScheduleForm({ scheduleId, initialData }: ScheduleFormProps) {
     const router = useRouter()
     const supabase = createClient()
     const [loading, setLoading] = React.useState(false)
@@ -58,9 +78,13 @@ export function ScheduleForm() {
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            date: format(new Date(), "yyyy-MM-dd"),
-            slot_type: "葬儀",
-            status: "occupied",
+            date: initialData?.date || format(new Date(), "yyyy-MM-dd"),
+            ceremony_time: initialData?.ceremony_time || "10:00",
+            hall_id: initialData?.hall_id || "",
+            slot_type: initialData?.slot_type || "葬儀",
+            status: initialData?.status || "occupied",
+            family_name: initialData?.family_name || "",
+            remarks: initialData?.remarks || "",
         },
     })
 
@@ -109,17 +133,54 @@ export function ScheduleForm() {
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setLoading(true)
 
-        const { error } = await supabase.from("schedules").insert({
-            date: values.date,
-            hall_id: values.hall_id,
-            slot_type: values.slot_type,
-            status: values.status,
-        })
+        // Supabase AuthのセッションからユーザーIDを取得
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (!session) {
+            toast.error("ログインセッションが切れました。再ログインしてください。")
+            router.push("/login")
+            return
+        }
+
+        let error;
+
+        if (scheduleId) {
+            // Update existing schedule
+            const { error: updateError } = await supabase
+                .from("schedules")
+                .update({
+                    date: values.date,
+                    ceremony_time: values.ceremony_time,
+                    hall_id: values.hall_id,
+                    slot_type: values.slot_type,
+                    status: values.status,
+                    family_name: values.family_name,
+                    remarks: values.remarks,
+                    // updated_by: session.user.id, // TODO: Add updated_by column if needed
+                })
+                .eq('id', scheduleId)
+            error = updateError;
+        } else {
+            // Insert new schedule
+            const { error: insertError } = await supabase.from("schedules").insert({
+                date: values.date,
+                ceremony_time: values.ceremony_time,
+                hall_id: values.hall_id,
+                slot_type: values.slot_type,
+                status: values.status,
+                family_name: values.family_name,
+                remarks: values.remarks,
+                registered_by: session.user.id,
+                source: 'manual'
+            })
+            error = insertError;
+        }
 
         if (error) {
             console.error(error)
-            alert("登録に失敗しました")
+            toast.error(scheduleId ? "スケジュールの更新に失敗しました。" : "スケジュールの登録に失敗しました。")
         } else {
+            toast.success(scheduleId ? "スケジュールを更新しました" : "スケジュールを登録しました")
             router.push("/schedule")
             router.refresh()
         }
@@ -129,7 +190,18 @@ export function ScheduleForm() {
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 max-w-md mx-auto p-6 border rounded-lg bg-card text-card-foreground shadow-sm">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 max-w-md mx-auto p-6 border rounded-lg bg-card text-card-foreground shadow-sm relative">
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                    onClick={() => router.push("/schedule")}
+                >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">閉じる</span>
+                </Button>
+
                 <FormField
                     control={form.control}
                     name="date"
@@ -138,6 +210,20 @@ export function ScheduleForm() {
                             <FormLabel>日付</FormLabel>
                             <FormControl>
                                 <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+
+                <FormField
+                    control={form.control}
+                    name="ceremony_time"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>開始時刻</FormLabel>
+                            <FormControl>
+                                <Input type="time" {...field} />
                             </FormControl>
                             <FormMessage />
                         </FormItem>
@@ -167,7 +253,7 @@ export function ScheduleForm() {
                                 </FormControl>
                                 <SelectContent>
                                     {facilities.map((facility) => (
-                                        <React.Fragment key={facility.id}>
+                                        <SelectGroup key={facility.id}>
                                             <SelectLabel className="font-bold bg-muted opacity-100 text-muted-foreground pl-2 py-1">
                                                 {facility.name}
                                             </SelectLabel>
@@ -176,10 +262,41 @@ export function ScheduleForm() {
                                                     {hall.name}
                                                 </SelectItem>
                                             ))}
-                                        </React.Fragment>
+                                        </SelectGroup>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+
+                <FormField
+                    control={form.control}
+                    name="family_name"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>喪家名</FormLabel>
+                            <FormControl>
+                                <div className="flex items-center gap-2">
+                                    <Input placeholder="例: 佐藤" {...field} />
+                                    <span className="font-medium whitespace-nowrap">家 様</span>
+                                </div>
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+
+                <FormField
+                    control={form.control}
+                    name="remarks"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>備考</FormLabel>
+                            <FormControl>
+                                <Input placeholder="自由入力" {...field} />
+                            </FormControl>
                             <FormMessage />
                         </FormItem>
                     )}
