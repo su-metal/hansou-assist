@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 
 import { ScheduleForm } from "@/components/schedule/schedule-form"
 
