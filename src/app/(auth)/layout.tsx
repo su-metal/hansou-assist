@@ -139,7 +139,32 @@ export default function AuthLayout({
                 )}
             </header>
 
-            <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            {/* Bottom Navigation (Mobile) */}
+            <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50 pb-safe">
+                <div className="flex justify-around items-center h-16">
+                    {navigation.map((item) => {
+                        const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+                        // Shorten names for mobile tab bar
+                        const displayName = item.name === 'スケジュール一覧' ? '一覧' : item.name.replace('予定', '')
+
+                        return (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-colors ${isActive
+                                        ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+                                        : 'text-gray-500 dark:text-gray-400'
+                                    }`}
+                            >
+                                <item.icon className={`h-5 w-5 ${isActive ? 'stroke-[2.5px]' : ''}`} />
+                                <span className="text-[10px]">{displayName}</span>
+                            </Link>
+                        )
+                    })}
+                </div>
+            </nav>
+
+            <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 pb-24 sm:pb-6">
                 {children}
             </main>
         </div>
