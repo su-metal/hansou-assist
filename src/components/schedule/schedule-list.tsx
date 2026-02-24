@@ -11,6 +11,8 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { Suspense } from 'react'
 // ... imports
 
 type Facility = {
@@ -19,12 +21,16 @@ type Facility = {
     halls: Hall[]
     start_hour: number
     end_hour: number
+    funeral_conditional_time?: string
+    wake_required_time?: string
+    funeral_block_time?: string
 }
 
 type Hall = {
     id: string
     name: string
     schedules: Schedule[]
+    max_count?: number
 }
 
 type Schedule = {
@@ -38,101 +44,202 @@ type Schedule = {
 }
 
 export function ScheduleList() {
-    const [currentDate, setCurrentDate] = useState(new Date())
+    return (
+        <Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+            <ScheduleListContent />
+        </Suspense>
+    )
+}
+
+function ScheduleListContent() {
+    const searchParams = useSearchParams()
+    const router = useRouter()
+    const pathname = usePathname()
+
+    const [currentDate, setCurrentDate] = useState<Date>(new Date())
+    const [isInitialDateSet, setIsInitialDateSet] = useState(false)
     const [facilities, setFacilities] = useState<Facility[]>([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
 
+    const [isTomobiki, setIsTomobiki] = useState(false)
     const [activeFacilityIndex, setActiveFacilityIndex] = useState(0)
-    // ... touch state ...
+    const [isInitialFacilitySet, setIsInitialFacilitySet] = useState(false)
+
+    // Touch state for swipe navigation
     const [touchStart, setTouchStart] = useState<number | null>(null)
     const [touchEnd, setTouchEnd] = useState<number | null>(null)
-
-    // Minimum swipe distance (in px)
     const minSwipeDistance = 50
 
-    const fetchSchedules = useCallback(async () => {
+    // Match initial state from URL or LocalStorage synchronously (effect-like)
+    useEffect(() => {
+        if (!isInitialDateSet) {
+            let initialDate = new Date()
+            const dateParam = searchParams.get('date')
+            if (dateParam) {
+                const parsed = new Date(dateParam)
+                if (!isNaN(parsed.getTime())) {
+                    initialDate = parsed
+                }
+            } else {
+                const storedDate = localStorage.getItem('hansou_schedule_date')
+                if (storedDate) {
+                    const parsed = new Date(storedDate)
+                    if (!isNaN(parsed.getTime())) {
+                        initialDate = parsed
+                    }
+                }
+            }
+            setCurrentDate(initialDate)
+            setIsInitialDateSet(true)
+        }
+    }, [searchParams, isInitialDateSet])
+
+    // Fetch schedules with race condition prevention
+    const fetchSchedules = useCallback(async (targetDate: Date, signal?: { ignore: boolean }) => {
         setLoading(true)
-        const targetDate = format(currentDate, 'yyyy-MM-dd')
+        const dateStr = format(targetDate, 'yyyy-MM-dd')
 
-        // Fetch facilities with halls
-        const { data: facilitiesData, error: facilitiesError } = await supabase
-            .from('facilities')
-            .select(`
-                id,
-                name,
-                start_hour,
-                end_hour,
-                halls (
+        try {
+            // Fetch facilities with halls
+            const { data: facilitiesData, error: facilitiesError } = await supabase
+                .from('facilities')
+                .select(`
                     id,
-                    name
-                )
-            `)
-            .eq('is_active', true)
-            .order('created_at')
+                    name,
+                    start_hour,
+                    end_hour,
+                    funeral_conditional_time,
+                    wake_required_time,
+                    funeral_block_time,
+                    halls (
+                        id,
+                        name
+                    )
+                `)
+                .eq('is_active', true)
+                .order('created_at')
 
-        if (facilitiesError) {
-            console.error('Error fetching facilities:', facilitiesError)
-            setLoading(false)
-            return
-        }
+            if (signal?.ignore) return
+            if (facilitiesError) throw facilitiesError
 
-        if (!facilitiesData) return
+            // Fetch Rokuyo
+            const { data: rokuyoData } = await supabase
+                .from('rokuyo')
+                .select('is_tomobiki')
+                .eq('date', dateStr)
+                .maybeSingle()
 
-        // Fetch schedules for the target date
-        const { data: schedulesData, error: schedulesError } = await supabase
-            .from('schedules')
-            .select('*')
-            .eq('date', targetDate)
+            if (signal?.ignore) return
+            setIsTomobiki(!!rokuyoData?.is_tomobiki)
 
-        if (schedulesError) {
-            console.error('Error fetching schedules:', schedulesError)
-            setLoading(false)
-            return
-        }
+            // Fetch schedules for the target date
+            const { data: schedulesData, error: schedulesError } = await supabase
+                .from('schedules')
+                .select('*')
+                .eq('date', dateStr)
 
-        // Map schedules to halls
-        const formattedFacilities = (facilitiesData as unknown as Facility[]).map(facility => ({
-            ...facility,
-            // Ensure defaults if null (though DB has defaults)
-            start_hour: facility.start_hour ?? 9,
-            end_hour: facility.end_hour ?? 18,
-            halls: facility.halls.map(hall => ({
-                ...hall,
-                schedules: (schedulesData as unknown as Schedule[])?.filter(s => s.hall_id === hall.id) || []
+            if (signal?.ignore) return
+            if (schedulesError) throw schedulesError
+
+            // Fetch daily capacities for the target date
+            const { data: capacitiesData } = await supabase
+                .from('daily_capacities')
+                .select('hall_id, max_count')
+                .eq('date', dateStr)
+
+            if (signal?.ignore) return
+
+            const capacityMap: Record<string, number> = {}
+            capacitiesData?.forEach((c: { hall_id: string, max_count: number }) => {
+                capacityMap[c.hall_id] = c.max_count
+            })
+
+            const formattedFacilities = (facilitiesData as unknown as Facility[]).map(facility => ({
+                ...facility,
+                start_hour: facility.start_hour ?? 9,
+                end_hour: 22,
+                halls: facility.halls.map(hall => ({
+                    ...hall,
+                    schedules: (schedulesData as unknown as Schedule[])?.filter(s => s.hall_id === hall.id) || [],
+                    max_count: capacityMap[hall.id]
+                }))
             }))
-        }))
 
-        setFacilities(formattedFacilities)
-        setLoading(false)
-    }, [currentDate, supabase])
+            setFacilities(formattedFacilities)
+        } catch (err) {
+            console.error('Fetch error:', err)
+        } finally {
+            if (!signal?.ignore) setLoading(false)
+        }
+    }, [supabase])
 
     useEffect(() => {
-        const initSchedules = async () => {
-            await fetchSchedules()
-        }
-        initSchedules()
+        if (!isInitialDateSet) return
 
-        // Subscribe to realtime changes
+        let ignore = false
+        const signal = { ignore }
+
+        fetchSchedules(currentDate, signal)
+
         const channel = supabase
-            .channel('schema-db-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'schedules',
-                },
-                () => {
-                    fetchSchedules()
-                }
-            )
+            .channel(`schedule-list-${format(currentDate, 'yyyy-MM-dd')}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
+                fetchSchedules(currentDate, signal)
+            })
             .subscribe()
 
         return () => {
+            signal.ignore = true
             supabase.removeChannel(channel)
         }
-    }, [fetchSchedules, supabase])
+    }, [fetchSchedules, currentDate, isInitialDateSet, supabase])
+
+    // Sync state to URL and localStorage
+    useEffect(() => {
+        if (!isInitialDateSet || !isInitialFacilitySet || loading) return;
+
+        const currentParamsStr = searchParams.toString()
+        const params = new URLSearchParams(currentParamsStr)
+        const dateStr = format(currentDate, 'yyyy-MM-dd')
+
+        params.set('date', dateStr)
+        localStorage.setItem('hansou_schedule_date', dateStr)
+
+        if (facilities[activeFacilityIndex]) {
+            const facId = facilities[activeFacilityIndex].id
+            params.set('facility_id', facId)
+            localStorage.setItem('hansou_schedule_facility', facId)
+        }
+
+        const newParamsStr = params.toString()
+        if (currentParamsStr !== newParamsStr) {
+            const newUrl = `${pathname}?${newParamsStr}`
+            router.replace(newUrl, { scroll: false })
+        }
+    }, [currentDate, activeFacilityIndex, facilities, pathname, router, searchParams, isInitialDateSet, isInitialFacilitySet, loading])
+
+    // Match initial facility from URL or localStorage
+    useEffect(() => {
+        if (!isInitialFacilitySet && facilities.length > 0) {
+            let initialId = searchParams.get('facility_id')
+
+            // Fallback to local storage if no URL params
+            const hasParams = searchParams.has('date') || searchParams.has('facility_id')
+            if (!hasParams && !initialId) {
+                const storedId = localStorage.getItem('hansou_schedule_facility')
+                if (storedId) initialId = storedId
+            }
+
+            if (initialId) {
+                const index = facilities.findIndex(f => f.id === initialId)
+                if (index !== -1) {
+                    setActiveFacilityIndex(index)
+                }
+            }
+            setIsInitialFacilitySet(true)
+        }
+    }, [facilities, searchParams, isInitialFacilitySet])
 
     // ... touch handlers ...
     const onTouchStart = (e: React.TouchEvent) => {
@@ -233,6 +340,14 @@ export function ScheduleList() {
                 )}
             </div>
 
+            {/* 全体告知: 友引 */}
+            {isTomobiki && !loading && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2 text-amber-800 dark:text-amber-300 text-sm">
+                    <span className="font-bold bg-amber-200 dark:bg-amber-800 px-1.5 rounded">友引</span>
+                    <span>本日は友引のため、葬儀の予約は制限されています。</span>
+                </div>
+            )}
+
             {loading ? (
                 <div className="flex justify-center p-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -259,10 +374,52 @@ export function ScheduleList() {
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {activeFacility.halls.map((hall) => (
                                     <div key={hall.id} className="p-4 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <div className="mb-2 font-medium text-slate-900 dark:text-slate-100 border-l-4 border-primary pl-2">
-                                            {hall.name}
+                                        <div className="mb-2 font-medium text-slate-900 dark:text-slate-100 border-l-4 border-primary pl-2 flex justify-between items-center">
+                                            <span>{hall.name}</span>
+                                            <span className={`text-sm font-bold ${hall.schedules.length >= (hall.max_count ?? 1)
+                                                ? 'text-red-500'
+                                                : 'text-muted-foreground'
+                                                }`}>
+                                                ({hall.schedules.length} / {hall.max_count !== undefined ? hall.max_count : '-'})
+                                            </span>
                                         </div>
+
+                                        {/* ホール単位の制約告知 */}
+                                        {(() => {
+                                            const hasFuneral = hall.schedules.some(s => s.slot_type === '葬儀');
+                                            const hasWake = hall.schedules.some(s => s.slot_type === '通夜');
+                                            if (hasFuneral) {
+                                                return (
+                                                    <div className="mb-3 px-2 py-1 bg-slate-50 dark:bg-slate-900/40 rounded text-[11px] text-slate-500 flex items-center gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800">
+                                                        <span className="text-orange-500">●</span>
+                                                        葬儀予約があるため、一部の時間帯で通夜の登録が制限されています
+                                                    </div>
+                                                );
+                                            }
+                                            if (hasWake) {
+                                                return (
+                                                    <div className="mb-3 px-2 py-1 bg-slate-50 dark:bg-slate-900/40 rounded text-[11px] text-slate-500 flex items-center gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800">
+                                                        <span className="text-purple-500">●</span>
+                                                        通夜予約があるため、一部の時間帯で葬儀の登録が制限されています
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
+
                                         <div className="space-y-2">
+                                            {hall.max_count === undefined && (
+                                                <div className="block border border-dashed border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 rounded-md p-3 mb-2">
+                                                    <div className="flex items-center justify-between text-slate-400 mb-2">
+                                                        <span className="font-medium text-lg">全時間帯</span>
+                                                        <span className="text-sm text-red-500 font-bold">予約不可</span>
+                                                    </div>
+                                                    <p className="text-xs text-red-600 dark:text-red-400 leading-relaxed">
+                                                        受け入れ枠が未設定のため登録できません。<br />
+                                                        先に<Link href={`/capacities?date=${format(currentDate, 'yyyy-MM-dd')}&hall_id=${hall.id}`} className="underline font-bold hover:text-red-800 transition-colors">受け入れ枠設定</Link>を行ってください。
+                                                    </p>
+                                                </div>
+                                            )}
                                             {timeSlots.map(hour => {
                                                 const timeStr = `${hour}:00`;
                                                 // Find schedule for this hour
@@ -273,9 +430,35 @@ export function ScheduleList() {
                                                 })
 
                                                 if (schedule) {
+                                                    if (schedule.status === 'external') {
+                                                        return (
+                                                            <div
+                                                                key={`slot-${hall.id}-${hour}`}
+                                                                className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-md p-3 mb-2 opacity-80"
+                                                                style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}
+                                                            >
+                                                                <Link
+                                                                    href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${format(currentDate, 'yyyy-MM-dd')}`}
+                                                                    className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-md"
+                                                                />
+                                                                <div className="flex justify-between items-start mb-1 relative z-0">
+                                                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                                        他社予約
+                                                                    </span>
+                                                                    <span className="font-bold text-lg text-slate-500 dark:text-slate-400">
+                                                                        {schedule.ceremony_time}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="font-bold text-lg text-slate-500 dark:text-slate-400 mt-1 relative z-0">
+                                                                    （斎場ブロック枠）
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    }
+
                                                     return (
                                                         <Link
-                                                            href={`/schedule/${schedule.id}`}
+                                                            href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${format(currentDate, 'yyyy-MM-dd')}`}
                                                             key={`slot-${hall.id}-${hour}`}
                                                             className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md p-3 shadow-sm hover:border-primary transition-colors mb-2"
                                                         >
@@ -302,15 +485,105 @@ export function ScheduleList() {
                                                     )
                                                 } else {
                                                     // Empty slot
+                                                    if (hall.max_count === undefined) return null;
                                                     const dateStr = format(currentDate, 'yyyy-MM-dd')
+
+                                                    // Determine if slot is usable for at least one type
+                                                    const testTimeStr = `${hour}:00`
+                                                    const testMin = hour * 60
+
+                                                    // Use rules from hall's facility
+                                                    const {
+                                                        funeral_conditional_time,
+                                                        wake_required_time,
+                                                        funeral_block_time
+                                                    } = activeFacility
+
+                                                    const timeToMin = (t: string | null) => {
+                                                        if (!t) return null
+                                                        const [h, m] = t.split(':').map(Number)
+                                                        return h * 60 + m
+                                                    }
+
+                                                    const condMin = timeToMin(funeral_conditional_time || null)
+                                                    const reqMin = timeToMin(wake_required_time || null)
+                                                    const blockMin = timeToMin(funeral_block_time || null)
+
+                                                    // Check Funeral possibility: Not Tomobiki AND <= 12:00 AND no existing funeral
+                                                    const hasFuneral = hall.schedules.some(s => s.slot_type === '葬儀')
+                                                    const canFuneral = !isTomobiki && testMin <= 12 * 60 && !hasFuneral
+
+                                                    // Check Wake possibility: Swap rules & 1 count limit
+                                                    const hasWake = hall.schedules.some(s => s.slot_type === '通夜')
+                                                    let canWake = !hasWake
+                                                    const existingFuneral = hall.schedules.find(s => s.slot_type === '葬儀')
+                                                    if (existingFuneral) {
+                                                        const fMin = timeToMin(existingFuneral.ceremony_time || null)
+                                                        if (fMin !== null) {
+                                                            if (blockMin !== null && fMin >= blockMin) canWake = false
+                                                            if (canWake && condMin !== null && reqMin !== null && fMin >= condMin && testMin < reqMin) {
+                                                                canWake = false
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Also check if slot is blocked by an existing wake (Swap rule for Funeral)
+                                                    let canFuneralWithExistingWake = canFuneral
+                                                    const existingWake = hall.schedules.find(s => s.slot_type === '通夜')
+                                                    if (existingWake) {
+                                                        const wMin = timeToMin(existingWake.ceremony_time || null)
+                                                        if (wMin !== null) {
+                                                            if (blockMin !== null && testMin >= blockMin) canFuneralWithExistingWake = false
+                                                            if (canFuneralWithExistingWake && condMin !== null && reqMin !== null && testMin >= condMin && wMin < reqMin) {
+                                                                canFuneralWithExistingWake = false
+                                                            }
+                                                        }
+                                                    }
+
+                                                    const isRestricted = !canWake && !canFuneralWithExistingWake
+
+                                                    if (isRestricted) {
+                                                        return (
+                                                            <div
+                                                                key={`slot-${hall.id}-${hour}`}
+                                                                className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-md p-3 flex items-center justify-between text-slate-300 dark:text-slate-700 mb-2 cursor-not-allowed opacity-60"
+                                                            >
+                                                                <span className="font-medium text-lg">{timeStr}</span>
+                                                                <span className="text-[10px]">予約不可</span>
+                                                            </div>
+                                                        )
+                                                    }
+
+                                                    // いずれかが不可な場合は少し透過させる
+                                                    const isPartiallyRestricted = !canWake || !canFuneralWithExistingWake
+
+                                                    // ラベルの決定
+                                                    let statusLabel: React.ReactNode = "空き"
+                                                    if (!canFuneralWithExistingWake && canWake) {
+                                                        statusLabel = (
+                                                            <span className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                                通夜のみ
+                                                            </span>
+                                                        )
+                                                    } else if (canFuneralWithExistingWake && !canWake) {
+                                                        statusLabel = (
+                                                            <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                                                葬儀のみ
+                                                            </span>
+                                                        )
+                                                    }
+
                                                     return (
                                                         <Link
                                                             key={`slot-${hall.id}-${hour}`}
-                                                            href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}&time=${timeStr}`}
-                                                            className="block border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-3 flex items-center justify-between text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-primary hover:border-primary transition-colors mb-2"
+                                                            href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}&time=${timeStr}&back_facility_id=${activeFacility.id}&back_date=${dateStr}`}
+                                                            className={`block border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-3 flex items-center justify-between text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-primary hover:border-primary transition-colors mb-2 ${isPartiallyRestricted ? 'opacity-70 grayscale-[0.5]' : ''
+                                                                }`}
                                                         >
                                                             <span className="font-medium text-lg">{timeStr}</span>
-                                                            <span className="text-sm">空き</span>
+                                                            <span className="text-sm font-medium">{statusLabel}</span>
                                                         </Link>
                                                     )
                                                 }

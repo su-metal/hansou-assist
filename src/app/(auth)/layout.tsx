@@ -15,14 +15,12 @@ export default function AuthLayout({
     const { signOut, user, loading } = useAuth()
     const pathname = usePathname()
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-
     const navigation = [
         { name: 'スケジュール一覧', href: '/schedule', icon: List },
         { name: 'カレンダー', href: '/calendar', icon: Calendar },
-        { name: '予定登録', href: '/schedule/new', icon: PlusCircle },
+        { name: '受け入れ枠設定', href: '/capacities', icon: Settings },
         { name: '設定', href: '/admin', icon: Settings },
     ]
-
     const handleSignOut = async () => {
         await signOut()
     }
@@ -152,8 +150,8 @@ export default function AuthLayout({
                                 key={item.name}
                                 href={item.href}
                                 className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-colors ${isActive
-                                        ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-                                        : 'text-gray-500 dark:text-gray-400'
+                                    ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+                                    : 'text-gray-500 dark:text-gray-400'
                                     }`}
                             >
                                 <item.icon className={`h-5 w-5 ${isActive ? 'stroke-[2.5px]' : ''}`} />

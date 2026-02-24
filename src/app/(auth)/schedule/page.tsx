@@ -1,4 +1,7 @@
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 import { ScheduleList } from '@/components/schedule/schedule-list'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
@@ -14,6 +17,7 @@ export default function SchedulePage() {
                         各ホールの稼働状況を確認できます。
                     </p>
                 </div>
+                {/* 
                 <div className="flex gap-2">
                     <Button asChild variant="outline">
                         <Link href="/camera">
@@ -28,6 +32,7 @@ export default function SchedulePage() {
                         </Link>
                     </Button>
                 </div>
+                */}
             </div>
             <ScheduleList />
         </div>
