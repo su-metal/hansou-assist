@@ -192,9 +192,9 @@ function ScheduleListContent() {
 
             setFacilities(formattedFacilities)
 
-            // Fetch Cremation Vacancies if it's a Gamagori facility
-            const activeFacility = formattedFacilities[activeFacilityIndex]
-            if (activeFacility && GAMAGORI_FACILITY_IDS.includes(activeFacility.id)) {
+            // Fetch Cremation Vacancies if there's any Gamagori facility
+            const hasGamagori = formattedFacilities.some(f => GAMAGORI_FACILITY_IDS.includes(f.id))
+            if (hasGamagori) {
                 const { data: cremationData } = await supabase
                     .from('cremation_vacancies')
                     .select('*')
