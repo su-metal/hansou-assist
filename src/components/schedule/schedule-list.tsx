@@ -3,8 +3,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar } from '@/components/ui/calendar'
@@ -13,7 +21,9 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { Suspense } from 'react'
-// ... imports
+import { RefreshCw } from 'lucide-react'
+import { syncCremationVacancies } from '@/lib/actions/cremation-vacancy'
+import { toast } from 'sonner'
 
 type Facility = {
     id: string
@@ -41,7 +51,19 @@ type Schedule = {
     status: string
     ceremony_time?: string
     hall_id?: string
+    remarks?: string
 }
+
+type CremationVacancy = {
+    date: string
+    time: string
+    available_count: number
+}
+
+const GAMAGORI_FACILITY_IDS = [
+    '838d0498-14fa-41e6-b950-438fd220d9fe', // JA蒲郡市やすらぎセンター
+    '74e44fcc-03c3-4a13-b89a-ef4e9726d116'  // 家族葬の結家 蒲郡宝町
+]
 
 export function ScheduleList() {
     return (
@@ -65,6 +87,8 @@ function ScheduleListContent() {
     const [isTomobiki, setIsTomobiki] = useState(false)
     const [activeFacilityIndex, setActiveFacilityIndex] = useState(0)
     const [isInitialFacilitySet, setIsInitialFacilitySet] = useState(false)
+    const [cremationVacancies, setCremationVacancies] = useState<CremationVacancy[]>([])
+    const [isSyncing, setIsSyncing] = useState(false)
 
     // Touch state for swipe navigation
     const [touchStart, setTouchStart] = useState<number | null>(null)
@@ -96,8 +120,8 @@ function ScheduleListContent() {
     }, [searchParams, isInitialDateSet])
 
     // Fetch schedules with race condition prevention
-    const fetchSchedules = useCallback(async (targetDate: Date, signal?: { ignore: boolean }) => {
-        setLoading(true)
+    const fetchSchedules = useCallback(async (targetDate: Date, signal?: { ignore: boolean }, silent: boolean = false) => {
+        if (!silent) setLoading(true)
         const dateStr = format(targetDate, 'yyyy-MM-dd')
 
         try {
@@ -167,6 +191,24 @@ function ScheduleListContent() {
             }))
 
             setFacilities(formattedFacilities)
+
+            // Fetch Cremation Vacancies if it's a Gamagori facility
+            const activeFacility = formattedFacilities[activeFacilityIndex]
+            if (activeFacility && GAMAGORI_FACILITY_IDS.includes(activeFacility.id)) {
+                const { data: cremationData } = await supabase
+                    .from('cremation_vacancies')
+                    .select('*')
+                    .eq('date', dateStr)
+                    .order('time')
+
+                if (!signal?.ignore) {
+                    setCremationVacancies(cremationData || [])
+                }
+            } else {
+                if (!signal?.ignore) {
+                    setCremationVacancies([])
+                }
+            }
         } catch (err) {
             console.error('Fetch error:', err)
         } finally {
@@ -185,7 +227,7 @@ function ScheduleListContent() {
         const channel = supabase
             .channel(`schedule-list-${format(currentDate, 'yyyy-MM-dd')}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-                fetchSchedules(currentDate, signal)
+                fetchSchedules(currentDate, signal, true)
             })
             .subscribe()
 
@@ -245,6 +287,23 @@ function ScheduleListContent() {
     const onTouchStart = (e: React.TouchEvent) => {
         setTouchEnd(null)
         setTouchStart(e.targetTouches[0].clientX)
+    }
+
+    const handleSyncCremation = async () => {
+        setIsSyncing(true)
+        try {
+            const result = await syncCremationVacancies()
+            if (result.success) {
+                toast.success('火葬場の空き状況を更新しました')
+                fetchSchedules(currentDate, undefined, true)
+            } else {
+                toast.error(`更新に失敗しました: ${result.error}`)
+            }
+        } catch (err) {
+            toast.error('通信エラーが発生しました')
+        } finally {
+            setIsSyncing(false)
+        }
     }
 
     const onTouchMove = (e: React.TouchEvent) => {
@@ -371,6 +430,74 @@ function ScheduleListContent() {
                             </span>
                         </CardHeader>
                         <CardContent className="p-0">
+                            {GAMAGORI_FACILITY_IDS.includes(activeFacility.id) && (
+                                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-primary rounded-full"></div>
+                                        <h3 className="font-bold text-sm text-slate-700 dark:text-slate-300">火葬場（とぼね）</h3>
+                                    </div>
+                                    <Dialog>
+                                        <DialogTrigger asChild>
+                                            <Button variant="outline" size="sm" className="h-8 gap-1 border-primary/20 hover:bg-primary/5">
+                                                空き状況を確認
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent className="w-[95vw] max-w-lg rounded-xl">
+                                            <DialogHeader>
+                                                <DialogTitle className="text-left flex items-center justify-between">
+                                                    <span>とぼね空き状況</span>
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        className="h-8 gap-1.5"
+                                                        onClick={handleSyncCremation}
+                                                        disabled={isSyncing}
+                                                    >
+                                                        <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                                        更新
+                                                    </Button>
+                                                </DialogTitle>
+                                            </DialogHeader>
+
+                                            <div className="py-2">
+                                                {cremationVacancies.length > 0 ? (
+                                                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                                        {cremationVacancies.map((v) => (
+                                                            <div key={v.time} className="flex flex-col items-center py-2 px-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                                <span className="text-[11px] text-slate-500 font-medium mb-1">{v.time}</span>
+                                                                <span className={`text-sm font-bold ${v.available_count > 0 ? 'text-primary' : 'text-slate-400'}`}>
+                                                                    {v.available_count > 0 ? `${v.available_count}件` : '×'}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center py-10 bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                                                        <span className="text-sm text-slate-500 mb-2 font-medium">この日の空き枠データはありません</span>
+                                                        <span className="text-xs text-slate-400 text-center leading-relaxed">
+                                                            ※公式予約システムでは当日から2日後以降の枠のみ表示される場合があります。<br />
+                                                            情報が古い場合は右上の「更新」をタップしてください。
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="text-right border-t border-slate-100 dark:border-slate-800 pt-3 mt-2">
+                                                <a
+                                                    href="https://saijyo6.seagulloffice.com/tobone/user/cremationvacancy?172872981&c=1&f=1&__SANE_MI__=v1-1"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
+                                                >
+                                                    公式の予約システムを開く
+                                                    <ExternalLink className="h-3 w-3" />
+                                                </a>
+                                            </div>
+                                        </DialogContent>
+                                    </Dialog>
+                                </div>
+                            )}
+
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {activeFacility.halls.map((hall) => (
                                     <div key={hall.id} className="p-4 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
@@ -476,6 +603,11 @@ function ScheduleListContent() {
                                                             <div className="font-bold text-xl text-slate-900 dark:text-slate-100 mt-1">
                                                                 {schedule.family_name} 様
                                                             </div>
+                                                            {schedule.remarks && (
+                                                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                                                    {schedule.remarks}
+                                                                </div>
+                                                            )}
                                                             {schedule.status === 'preparing' && (
                                                                 <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                                                                     ※仮予約
