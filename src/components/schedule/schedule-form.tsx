@@ -40,12 +40,18 @@ interface Hall {
     name: string;
 }
 
+interface TurnoverRule {
+    funeral_time: string
+    min_wake_time?: string
+    is_forbidden?: boolean
+}
+
 interface Facility {
     id: string;
     name: string;
-    funeral_conditional_time: string | null;
-    wake_required_time: string | null;
     funeral_block_time: string | null;
+    turnover_interval_hours: number | null;
+    turnover_rules: TurnoverRule[] | null;
     halls: Hall[];
 }
 
@@ -102,8 +108,8 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
         defaultValues: {
             date: initialData?.date || backDate || format(new Date(), "yyyy-MM-dd"),
             ceremony_time: initialData?.ceremony_time || "10:00",
-            hall_id: initialData?.hall_id || "",
-            slot_type: initialData?.slot_type || "葬儀",
+            hall_id: initialData?.hall_id || searchParams.get('hall_id') || "",
+            slot_type: initialData?.slot_type || (searchParams.get('slot_type') as any) || "葬儀",
             status: initialData?.status || "occupied",
             family_name: initialData?.family_name || "",
             remarks: initialData?.remarks || "",
@@ -117,9 +123,9 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                 .select(`
                     id,
                     name,
-                    funeral_conditional_time,
-                    wake_required_time,
                     funeral_block_time,
+                    turnover_interval_hours,
+                    turnover_rules,
                     halls (
                         id,
                         name
@@ -199,34 +205,45 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
         fetchConflictSchedules()
     }, [watchDate, watchHallId, scheduleId, supabase])
 
-    // 時間による種別の自動切り替え
-    React.useEffect(() => {
-        if (!watchTime) return
-        const minutes = (timeStr: string) => {
-            const [h, m] = timeStr.split(':').map(Number);
-            return h * 60 + m;
-        }
-        const m = minutes(watchTime);
-        const currentType = form.getValues("slot_type");
-
-        if (m > 12 * 60) {
-            if (currentType === "葬儀") {
-                form.setValue("slot_type", "通夜")
-                toast.info("13:00以降のため、種別を「通夜」に変更しました。")
-            }
-        } else {
-            if (currentType === "通夜") {
-                form.setValue("slot_type", "葬儀")
-                toast.info("午前中のため、種別を「葬儀」に変更しました。")
-            }
-        }
-    }, [watchTime, form])
+    // 時間による種別の自動切り替え（廃止: ユーザーが手動で選べるようにするため削除）
 
     // 時間文字列（HH:mm または HH:mm:ss）を分単位の数値に変換
     const timeToMinutes = (timeStr: string | null): number | null => {
         if (!timeStr) return null;
         const [hours, minutes] = timeStr.split(':').map(Number);
         return hours * 60 + minutes;
+    };
+
+    // 葬儀時間に基づき、通夜の最短時間または禁止設定を取得する
+    const getTurnoverConstraint = (facility: Facility, funeralTimeStr: string | null) => {
+        if (!funeralTimeStr) return { minWakeMin: null, isForbidden: false };
+
+        const fMin = timeToMinutes(funeralTimeStr);
+        if (fMin === null) return { minWakeMin: null, isForbidden: false };
+
+        // 1. 個別マッピングルールのチェック（完全一致を優先し、なければその時間以降の最初のルールを探す）
+        const rules = Array.isArray(facility.turnover_rules) ? facility.turnover_rules : [];
+        const sortedRules = [...rules].sort((a, b) => (timeToMinutes(a.funeral_time) || 0) - (timeToMinutes(b.funeral_time) || 0));
+
+        // 葬儀時間と完全に一致するルールがあるか確認
+        const exactRule = sortedRules.find(r => timeToMinutes(r.funeral_time) === fMin);
+        if (exactRule) {
+            return {
+                minWakeMin: exactRule.is_forbidden ? null : timeToMinutes(exactRule.min_wake_time || null),
+                isForbidden: !!exactRule.is_forbidden,
+                matchedRule: exactRule
+            };
+        }
+
+        // 2. 「入替不可となる葬儀時間」のチェック
+        const blockMin = timeToMinutes(facility.funeral_block_time);
+        if (blockMin !== null && fMin >= blockMin) {
+            return { minWakeMin: null, isForbidden: true, isByBlockTime: true };
+        }
+
+        // 3. インターバル時間の適用
+        const intervalMin = (facility.turnover_interval_hours ?? 8) * 60;
+        return { minWakeMin: fMin + intervalMin, isForbidden: false };
     };
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -297,73 +314,70 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
         // --- 当日通夜受入・葬儀入替制限チェック ---
         const selectedFacility = facilities.find(f => f.halls.some(h => h.id === values.hall_id))
 
-        if (selectedFacility) {
-            const { funeral_conditional_time, wake_required_time, funeral_block_time } = selectedFacility;
+        // 既存データの編集で、開式時間もホールも変更されていない場合は、
+        // 斎場設定の変更（例：インターバル時間の変更）によって既存予約が保存できなくなるのを防ぐためチェックをスキップする
+        const isContextChanged = !initialData ||
+            initialData.ceremony_time !== values.ceremony_time ||
+            initialData.hall_id !== values.hall_id;
 
-            // 全ての時間が設定されている場合のみバリデーションを実施
-            if (funeral_conditional_time && wake_required_time && funeral_block_time) {
-                let existingQuery = supabase
-                    .from('schedules')
-                    .select('id, slot_type, ceremony_time')
-                    .eq('date', values.date)
-                    .eq('hall_id', values.hall_id)
+        if (selectedFacility && isContextChanged) {
+            let existingQuery = supabase
+                .from('schedules')
+                .select('id, slot_type, ceremony_time')
+                .eq('date', values.date)
+                .eq('hall_id', values.hall_id)
 
-                if (scheduleId) {
-                    existingQuery = existingQuery.neq('id', scheduleId)
-                }
+            if (scheduleId) {
+                existingQuery = existingQuery.neq('id', scheduleId)
+            }
 
-                const { data: existingSchedules, error: existingError } = await existingQuery
+            const { data: existingSchedulesData, error: existingError } = await existingQuery
 
-                if (!existingError && existingSchedules) {
-                    const condMin = timeToMinutes(funeral_conditional_time);
-                    const reqMin = timeToMinutes(wake_required_time);
-                    const blockMin = timeToMinutes(funeral_block_time);
+            if (!existingError && existingSchedulesData) {
+                if (values.slot_type === '通夜') {
+                    const existingFuneral = existingSchedulesData.find((s: any) => s.slot_type === '葬儀' && s.ceremony_time)
+                    if (existingFuneral) {
+                        const { minWakeMin, isForbidden, matchedRule } = getTurnoverConstraint(selectedFacility, existingFuneral.ceremony_time);
+                        const wMin = timeToMinutes(values.ceremony_time);
 
-                    if (values.slot_type === '通夜') {
-                        const existingFuneral = existingSchedules.find((s: any) => s.slot_type === '葬儀' && s.ceremony_time)
-                        if (existingFuneral) {
-                            const fMin = timeToMinutes(existingFuneral.ceremony_time);
-                            const wMin = timeToMinutes(values.ceremony_time);
-
-                            if (fMin !== null && blockMin !== null && fMin >= blockMin) {
-                                toast.error(`同ホールで ${existingFuneral.ceremony_time} 開式の葬儀が予定されているため、この日の通夜は受け入れできません。(ルール: ${funeral_block_time}以降の葬儀は入替不可)`)
-                                setLoading(false)
-                                return
-                            }
-
-                            if (fMin !== null && condMin !== null && reqMin !== null && wMin !== null) {
-                                if (fMin >= condMin && wMin < reqMin) {
-                                    toast.error(`同ホールの葬儀が ${existingFuneral.ceremony_time} 開式のため、通夜は ${wake_required_time} 以降にする必要があります。`)
-                                    setLoading(false)
-                                    return
-                                }
-                            }
+                        if (isForbidden) {
+                            toast.error(`同ホールで ${existingFuneral.ceremony_time} 開式の葬儀が予定されているため、この日の通夜は受け入れできません。`)
+                            setLoading(false)
+                            return
                         }
-                    } else if (values.slot_type === '葬儀' && values.ceremony_time) {
-                        const existingWake = existingSchedules.find((s: any) => s.slot_type === '通夜' && s.ceremony_time)
-                        if (existingWake) {
-                            const fMin = timeToMinutes(values.ceremony_time);
-                            const wMin = timeToMinutes(existingWake.ceremony_time);
 
-                            if (fMin !== null && blockMin !== null && fMin >= blockMin) {
-                                toast.error(`すでに通夜の予約が入っているため、${funeral_block_time} 以降の葬儀は登録できません。先に入っている通夜の登録を確認してください。`)
-                                setLoading(false)
-                                return
-                            }
+                        if (minWakeMin !== null && wMin !== null && wMin < minWakeMin) {
+                            const minWakeTimeHour = Math.floor(minWakeMin / 60);
+                            const minWakeTimeMin = minWakeMin % 60;
+                            const formattedAllowedTime = `${minWakeTimeHour.toString().padStart(2, '0')}:${minWakeTimeMin.toString().padStart(2, '0')}`;
+                            const reason = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+                            toast.error(`同ホールの葬儀が ${existingFuneral.ceremony_time} 開式のため、通夜は ${formattedAllowedTime} 以降にする必要があります。(${reason})`)
+                            setLoading(false)
+                            return
+                        }
+                    }
+                } else if (values.slot_type === '葬儀' && values.ceremony_time) {
+                    const existingWake = existingSchedulesData.find((s: any) => s.slot_type === '通夜' && s.ceremony_time)
+                    if (existingWake) {
+                        const { minWakeMin, isForbidden } = getTurnoverConstraint(selectedFacility, values.ceremony_time);
+                        const wMin = timeToMinutes(existingWake.ceremony_time);
 
-                            if (fMin !== null && condMin !== null && reqMin !== null && wMin !== null) {
-                                if (fMin >= condMin && wMin < reqMin) {
-                                    toast.error(`すでに ${existingWake.ceremony_time} 開式の通夜が予約されているため、葬儀を ${values.ceremony_time} とすることはできません。(通夜を ${wake_required_time} 以降にする必要があります)`)
-                                    setLoading(false)
-                                    return
-                                }
-                            }
+                        if (isForbidden) {
+                            toast.error(`すでに通夜の予約が入っているため、この時間の葬儀は登録できません。（斎場の制限により入替が禁止されています）`)
+                            setLoading(false)
+                            return
+                        }
+
+                        if (minWakeMin !== null && wMin !== null && minWakeMin > wMin) {
+                            // 通夜の開始時間 wMin よりも、設定上の最短可能時間 minWakeMin の方が後になっている場合は、この葬儀は不可
+                            toast.error(`すでに ${existingWake.ceremony_time} 開式の通夜が予約されているため、葬儀を ${values.ceremony_time} とすることはできません。（入替制限に抵触します）`)
+                            setLoading(false)
+                            return
                         }
                     }
                 }
             }
         }
-        // ----------------------------------------
 
         // 既存の登録件数を取得 (更新の場合は自身を除外)
         let query = supabase
@@ -531,10 +545,8 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
 
                         const isTimeDisabled = (h: string, m: string) => {
                             if (!selectedFacility) return false;
-                            const { funeral_conditional_time, wake_required_time, funeral_block_time } = selectedFacility;
-                            if (!funeral_conditional_time || !wake_required_time || !funeral_block_time) return false;
-
-                            const testMin = timeToMinutes(`${h}:${m}`);
+                            const timeStr = `${h}:${m}`;
+                            const testMin = timeToMinutes(timeStr);
                             if (testMin === null) return false;
 
                             // 葬儀・通夜は1日各1件まで
@@ -550,26 +562,20 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                             if (slotType === '葬儀' && testMin > 12 * 60) return true;
                             if (slotType === '通夜' && testMin <= 12 * 60) return true;
 
-                            const condMin = timeToMinutes(funeral_conditional_time);
-                            const reqMin = timeToMinutes(wake_required_time);
-                            const blockMin = timeToMinutes(funeral_block_time);
-
                             if (slotType === '通夜') {
-                                const funeral = existingSchedules.find(s => s.slot_type === '葬儀');
+                                const funeral = existingSchedules.find(s => s.slot_type === '葬儀' && s.id !== scheduleId);
                                 if (funeral) {
-                                    const fMin = timeToMinutes(funeral.ceremony_time);
-                                    if (fMin === null) return false;
-                                    if (blockMin !== null && fMin >= blockMin) return true;
-                                    if (condMin !== null && reqMin !== null && fMin >= condMin && testMin < reqMin) return true;
+                                    const { minWakeMin, isForbidden } = getTurnoverConstraint(selectedFacility, funeral.ceremony_time);
+                                    if (isForbidden) return true;
+                                    if (minWakeMin !== null && testMin < minWakeMin) return true;
                                 }
                             } else if (slotType === '葬儀') {
-                                const wake = existingSchedules.find(s => s.slot_type === '通夜');
+                                const wake = existingSchedules.find(s => s.slot_type === '通夜' && s.id !== scheduleId);
                                 if (wake) {
-                                    const fMin = testMin;
+                                    const { minWakeMin, isForbidden } = getTurnoverConstraint(selectedFacility, timeStr);
+                                    if (isForbidden) return true;
                                     const wMin = timeToMinutes(wake.ceremony_time);
-                                    if (wMin === null) return false;
-                                    if (blockMin !== null && fMin >= blockMin) return true;
-                                    if (condMin !== null && reqMin !== null && fMin >= condMin && wMin < reqMin) return true;
+                                    if (minWakeMin !== null && wMin !== null && minWakeMin > wMin) return true;
                                 }
                             }
                             return false;
@@ -627,6 +633,63 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                         </SelectContent>
                                     </Select>
                                 </div>
+                                {(() => {
+                                    if (!selectedFacility) return null;
+
+                                    if (slotType === '通夜') {
+                                        const funeral = existingSchedules.find(s => s.slot_type === '葬儀');
+                                        if (funeral && funeral.ceremony_time) {
+                                            const { minWakeMin, isForbidden, matchedRule } = getTurnoverConstraint(selectedFacility, funeral.ceremony_time);
+
+                                            if (isForbidden) {
+                                                return (
+                                                    <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
+                                                        同ホールに{funeral.ceremony_time}開式の葬儀があるため、本日の通夜は受入不可です。
+                                                    </p>
+                                                );
+                                            }
+
+                                            if (minWakeMin !== null) {
+                                                const minWakeTimeHour = Math.floor(minWakeMin / 60);
+                                                const minWakeTimeMin = minWakeMin % 60;
+                                                const formattedTime = `${minWakeTimeHour.toString().padStart(2, '0')}:${minWakeTimeMin.toString().padStart(2, '0')}`;
+                                                const ruleInfo = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+
+                                                return (
+                                                    <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
+                                                        同ホールの葬儀(${funeral.ceremony_time})に基づき、通夜は{formattedTime}以降のみ選択可能です。({ruleInfo})
+                                                    </p>
+                                                );
+                                            }
+                                        }
+                                    } else if (slotType === '葬儀') {
+                                        const wake = existingSchedules.find(s => s.slot_type === '通夜');
+                                        if (wake && wake.ceremony_time) {
+                                            const wMin = timeToMinutes(wake.ceremony_time);
+                                            if (wMin !== null) {
+                                                // 葬儀時間の選択肢ごとにヒントを出すのは難しいため、現在の選択時間に基づいた判定を表示
+                                                const { minWakeMin, isForbidden } = getTurnoverConstraint(selectedFacility, watchTime);
+
+                                                if (isForbidden) {
+                                                    return (
+                                                        <p className="text-xs mt-1 text-red-500">
+                                                            現在の葬儀時間({watchTime})は、斎場の制限により入替不可設定となっています。
+                                                        </p>
+                                                    );
+                                                }
+
+                                                if (minWakeMin !== null && minWakeMin > wMin) {
+                                                    return (
+                                                        <p className="text-xs mt-1 text-red-500">
+                                                            現在の葬儀時間({watchTime})では、後続の通夜(${wake.ceremony_time})との入替時間が不足しています。
+                                                        </p>
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return null;
+                                })()}
                                 <FormMessage />
                             </FormItem>
                         );
@@ -724,19 +787,12 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                         <SelectContent>
                                             <SelectItem
                                                 value="葬儀"
-                                                disabled={tomobikiWarning || (!!watchTime && (() => {
-                                                    const [h, m] = watchTime.split(':').map(Number);
-                                                    return h * 60 + m;
-                                                })() > 12 * 60)}
+                                                disabled={tomobikiWarning}
                                             >
                                                 葬儀 {tomobikiWarning ? "(友引不可)" : ""}
                                             </SelectItem>
                                             <SelectItem
                                                 value="通夜"
-                                                disabled={!!watchTime && (() => {
-                                                    const [h, m] = watchTime.split(':').map(Number);
-                                                    return h * 60 + m;
-                                                })() <= 12 * 60}
                                             >
                                                 通夜
                                             </SelectItem>
