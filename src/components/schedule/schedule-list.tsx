@@ -25,15 +25,21 @@ import { RefreshCw } from 'lucide-react'
 import { syncCremationVacancies } from '@/lib/actions/cremation-vacancy'
 import { toast } from 'sonner'
 
+interface TurnoverRule {
+    funeral_time: string
+    min_wake_time?: string
+    is_forbidden?: boolean
+}
+
 type Facility = {
     id: string
     name: string
     halls: Hall[]
     start_hour: number
     end_hour: number
-    funeral_conditional_time?: string
-    wake_required_time?: string
     funeral_block_time?: string
+    turnover_interval_hours?: number
+    turnover_rules?: TurnoverRule[]
 }
 
 type Hall = {
@@ -133,9 +139,9 @@ function ScheduleListContent() {
                     name,
                     start_hour,
                     end_hour,
-                    funeral_conditional_time,
-                    wake_required_time,
                     funeral_block_time,
+                    turnover_interval_hours,
+                    turnover_rules,
                     halls (
                         id,
                         name
@@ -547,179 +553,147 @@ function ScheduleListContent() {
                                                     </p>
                                                 </div>
                                             )}
-                                            {timeSlots.map(hour => {
-                                                const timeStr = `${hour}:00`;
-                                                // Find schedule for this hour
-                                                // Assuming ceremony_time is string "HH:mm"
-                                                const schedule = hall.schedules.find(s => {
-                                                    // Loose matching: "10:00" matches "10:00" or start with "10:"
-                                                    return s.ceremony_time === timeStr || s.ceremony_time?.startsWith(`${hour}:`)
-                                                })
+                                            {hall.max_count !== undefined && (() => {
+                                                const existingFuneral = hall.schedules.find(s => s.slot_type === '葬儀')
+                                                const existingWake = hall.schedules.find(s => s.slot_type === '通夜')
+                                                const dateStr = format(currentDate, 'yyyy-MM-dd')
 
-                                                if (schedule) {
-                                                    if (schedule.status === 'external') {
-                                                        return (
-                                                            <div
-                                                                key={`slot-${hall.id}-${hour}`}
-                                                                className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-md p-3 mb-2 opacity-80"
-                                                                style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}
-                                                            >
-                                                                <Link
-                                                                    href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${format(currentDate, 'yyyy-MM-dd')}`}
-                                                                    className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-md"
-                                                                />
-                                                                <div className="flex justify-between items-start mb-1 relative z-0">
-                                                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                                                        他社予約
-                                                                    </span>
-                                                                    <span className="font-bold text-lg text-slate-500 dark:text-slate-400">
-                                                                        {schedule.ceremony_time}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="font-bold text-lg text-slate-500 dark:text-slate-400 mt-1 relative z-0">
-                                                                    （斎場ブロック枠）
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    }
-
-                                                    return (
-                                                        <Link
-                                                            href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${format(currentDate, 'yyyy-MM-dd')}`}
-                                                            key={`slot-${hall.id}-${hour}`}
-                                                            className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md p-3 shadow-sm hover:border-primary transition-colors mb-2"
-                                                        >
-                                                            <div className="flex justify-between items-start mb-1">
-                                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${schedule.slot_type === '葬儀'
-                                                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-                                                                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                                                                    }`}>
-                                                                    {schedule.slot_type}
-                                                                </span>
-                                                                <span className="font-bold text-lg text-slate-900 dark:text-slate-100">
-                                                                    {schedule.ceremony_time}
-                                                                </span>
-                                                            </div>
-                                                            <div className="font-bold text-xl text-slate-900 dark:text-slate-100 mt-1">
-                                                                {schedule.family_name} 様
-                                                            </div>
-                                                            {schedule.remarks && (
-                                                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                                                                    {schedule.remarks}
-                                                                </div>
-                                                            )}
-                                                            {schedule.status === 'preparing' && (
-                                                                <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                                                                    ※仮予約
-                                                                </div>
-                                                            )}
-                                                        </Link>
-                                                    )
-                                                } else {
-                                                    // Empty slot
-                                                    if (hall.max_count === undefined) return null;
-                                                    const dateStr = format(currentDate, 'yyyy-MM-dd')
-
-                                                    // Determine if slot is usable for at least one type
-                                                    const testTimeStr = `${hour}:00`
-                                                    const testMin = hour * 60
-
-                                                    // Use rules from hall's facility
-                                                    const {
-                                                        funeral_conditional_time,
-                                                        wake_required_time,
-                                                        funeral_block_time
-                                                    } = activeFacility
-
-                                                    const timeToMin = (t: string | null) => {
-                                                        if (!t) return null
-                                                        const [h, m] = t.split(':').map(Number)
-                                                        return h * 60 + m
-                                                    }
-
-                                                    const condMin = timeToMin(funeral_conditional_time || null)
-                                                    const reqMin = timeToMin(wake_required_time || null)
-                                                    const blockMin = timeToMin(funeral_block_time || null)
-
-                                                    // Check Funeral possibility: Not Tomobiki AND <= 12:00 AND no existing funeral
-                                                    const hasFuneral = hall.schedules.some(s => s.slot_type === '葬儀')
-                                                    const canFuneral = !isTomobiki && testMin <= 12 * 60 && !hasFuneral
-
-                                                    // Check Wake possibility: Swap rules & 1 count limit
-                                                    const hasWake = hall.schedules.some(s => s.slot_type === '通夜')
-                                                    let canWake = !hasWake
-                                                    const existingFuneral = hall.schedules.find(s => s.slot_type === '葬儀')
-                                                    if (existingFuneral) {
-                                                        const fMin = timeToMin(existingFuneral.ceremony_time || null)
-                                                        if (fMin !== null) {
-                                                            if (blockMin !== null && fMin >= blockMin) canWake = false
-                                                            if (canWake && condMin !== null && reqMin !== null && fMin >= condMin && testMin < reqMin) {
-                                                                canWake = false
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Also check if slot is blocked by an existing wake (Swap rule for Funeral)
-                                                    let canFuneralWithExistingWake = canFuneral
-                                                    const existingWake = hall.schedules.find(s => s.slot_type === '通夜')
-                                                    if (existingWake) {
-                                                        const wMin = timeToMin(existingWake.ceremony_time || null)
-                                                        if (wMin !== null) {
-                                                            if (blockMin !== null && testMin >= blockMin) canFuneralWithExistingWake = false
-                                                            if (canFuneralWithExistingWake && condMin !== null && reqMin !== null && testMin >= condMin && wMin < reqMin) {
-                                                                canFuneralWithExistingWake = false
-                                                            }
-                                                        }
-                                                    }
-
-                                                    const isRestricted = !canWake && !canFuneralWithExistingWake
-
-                                                    if (isRestricted) {
-                                                        return (
-                                                            <div
-                                                                key={`slot-${hall.id}-${hour}`}
-                                                                className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-md p-3 flex items-center justify-between text-slate-300 dark:text-slate-700 mb-2 cursor-not-allowed opacity-60"
-                                                            >
-                                                                <span className="font-medium text-lg">{timeStr}</span>
-                                                                <span className="text-[10px]">予約不可</span>
-                                                            </div>
-                                                        )
-                                                    }
-
-                                                    // いずれかが不可な場合は少し透過させる
-                                                    const isPartiallyRestricted = !canWake || !canFuneralWithExistingWake
-
-                                                    // ラベルの決定
-                                                    let statusLabel: React.ReactNode = "空き"
-                                                    if (!canFuneralWithExistingWake && canWake) {
-                                                        statusLabel = (
-                                                            <span className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                                                                通夜のみ
-                                                            </span>
-                                                        )
-                                                    } else if (canFuneralWithExistingWake && !canWake) {
-                                                        statusLabel = (
-                                                            <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                                                葬儀のみ
-                                                            </span>
-                                                        )
-                                                    }
-
-                                                    return (
-                                                        <Link
-                                                            key={`slot-${hall.id}-${hour}`}
-                                                            href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}&time=${timeStr}&back_facility_id=${activeFacility.id}&back_date=${dateStr}`}
-                                                            className={`block border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-3 flex items-center justify-between text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-primary hover:border-primary transition-colors mb-2 ${isPartiallyRestricted ? 'opacity-70 grayscale-[0.5]' : ''
-                                                                }`}
-                                                        >
-                                                            <span className="font-medium text-lg">{timeStr}</span>
-                                                            <span className="text-sm font-medium">{statusLabel}</span>
-                                                        </Link>
-                                                    )
+                                                const timeToMin = (t: string | null) => {
+                                                    if (!t) return null
+                                                    const [h, m] = t.split(':').map(Number)
+                                                    return h * 60 + m
                                                 }
-                                            })}
+
+                                                // Determine the turnover constraint based on rules
+                                                const getTurnoverConstraint = (fac: Facility, fTime: string | null) => {
+                                                    if (!fTime) return { minWakeMin: null, isForbidden: false };
+                                                    const fMin = timeToMin(fTime);
+                                                    if (fMin === null) return { minWakeMin: null, isForbidden: false };
+
+                                                    const rules = Array.isArray(fac.turnover_rules) ? fac.turnover_rules : [];
+                                                    const exactRule = rules.find(r => r.funeral_time === fTime);
+                                                    if (exactRule) {
+                                                        return {
+                                                            minWakeMin: exactRule.is_forbidden ? null : timeToMin(exactRule.min_wake_time || null),
+                                                            isForbidden: !!exactRule.is_forbidden,
+                                                            matchedRule: exactRule
+                                                        };
+                                                    }
+
+                                                    const bMin = timeToMin(fac.funeral_block_time || null);
+                                                    if (bMin !== null && fMin >= bMin) {
+                                                        return { minWakeMin: null, isForbidden: true };
+                                                    }
+
+                                                    const iMin = (fac.turnover_interval_hours ?? 8) * 60;
+                                                    return { minWakeMin: fMin + iMin, isForbidden: false };
+                                                };
+
+                                                // --- Funeral Logic ---
+                                                let canAddFuneral = !isTomobiki && !existingFuneral;
+                                                let funeralRestrictionDetail = "";
+                                                if (isTomobiki && !existingFuneral) {
+                                                    funeralRestrictionDetail = "友引のため不可";
+                                                }
+
+                                                // --- Wake Logic ---
+                                                let canAddWake = !existingWake;
+                                                let wakeRestrictionDetail = "";
+                                                if (!existingWake && existingFuneral) {
+                                                    const { minWakeMin, isForbidden, matchedRule } = getTurnoverConstraint(activeFacility, existingFuneral.ceremony_time || null);
+                                                    if (isForbidden) {
+                                                        canAddWake = false;
+                                                        wakeRestrictionDetail = "ルールの設定により予約できません";
+                                                    } else if (minWakeMin !== null) {
+                                                        const h = Math.floor(minWakeMin / 60);
+                                                        const m = minWakeMin % 60;
+                                                        wakeRestrictionDetail = `${h}:${m.toString().padStart(2, '0')}以降で可能`;
+                                                    }
+                                                }
+
+                                                const renderScheduleBlock = (slotType: '葬儀' | '通夜', schedule: Schedule | undefined, canAdd: boolean, restrictionDetail: string) => {
+                                                    if (schedule) {
+                                                        if (schedule.status === 'external') {
+                                                            return (
+                                                                <div className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl p-4 mb-2 opacity-80" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}>
+                                                                    <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-xl" />
+                                                                    <div className="flex justify-between items-start mb-2 relative z-0">
+                                                                        <span className="flex items-center gap-2">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-bold ${slotType === '葬儀' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                                {slotType}
+                                                                            </span>
+                                                                            <span className="px-2 py-1 rounded text-xs font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                                                他社予約
+                                                                            </span>
+                                                                        </span>
+                                                                        <span className="font-bold text-xl text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
+                                                                    </div>
+                                                                    <div className="font-bold text-lg text-slate-500 dark:text-slate-400 mt-2 relative z-0">（斎場ブロック枠）</div>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
+                                                                <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${slotType === '葬儀' ? 'bg-purple-500' : 'bg-orange-500'}`} />
+                                                                <div className="flex justify-between items-start mb-2 pl-2">
+                                                                    <span className={`px-3 py-1 rounded-md text-sm font-bold ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300'}`}>
+                                                                        {slotType}
+                                                                    </span>
+                                                                    <span className="font-bold text-2xl tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
+                                                                </div>
+                                                                <div className="font-bold text-xl text-slate-900 dark:text-slate-100 mt-2 flex items-center justify-between pl-2">
+                                                                    <span>{schedule.family_name} 様</span>
+                                                                    <span className="text-sm font-medium text-slate-400 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100">詳細 ／ 編集 ＞</span>
+                                                                </div>
+                                                                {schedule.remarks && <div className="text-sm text-slate-500 dark:text-slate-400 mt-3 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg ml-2">{schedule.remarks}</div>}
+                                                                {schedule.status === 'preparing' && <div className="text-sm font-bold text-amber-600 dark:text-amber-400 mt-3 bg-amber-50 dark:bg-amber-900/20 inline-block px-2 py-1 rounded ml-2">※仮予約</div>}
+                                                            </Link>
+                                                        );
+                                                    }
+
+                                                    // Empty state
+                                                    if (!canAdd) {
+                                                        const reason = restrictionDetail || '予約不可';
+                                                        return (
+                                                            <div className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl p-4 mb-2 flex flex-col opacity-60 relative overflow-hidden">
+                                                                <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${slotType === '葬儀' ? 'bg-slate-300 dark:bg-slate-700' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                                                <div className="flex justify-between items-start mb-2 pl-2">
+                                                                    <span className={`px-3 py-1 rounded-md text-sm font-bold ${slotType === '葬儀' ? 'bg-purple-100/50 text-purple-700/50 dark:bg-purple-900/10 dark:text-purple-300/50' : 'bg-orange-100/50 text-orange-700/50 dark:bg-orange-900/10 dark:text-orange-300/50'}`}>
+                                                                        {slotType}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex flex-col items-center justify-center py-5 text-center px-4">
+                                                                    <span className="text-base font-bold text-red-500 mb-1">予約不可</span>
+                                                                    <span className="text-sm font-medium text-slate-500 leading-relaxed">{reason}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <Link href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}&slot_type=${slotType}&back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="block border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-primary/50 transition-colors flex flex-col mb-2 group relative overflow-hidden">
+                                                            <div className={`absolute top-0 left-0 bottom-0 w-1.5 opacity-30 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-400' : 'bg-orange-400'}`} />
+                                                            <div className="flex justify-between items-start mb-2 pl-2">
+                                                                <span className={`px-3 py-1 rounded-md text-sm font-bold opacity-60 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                    {slotType}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex flex-col items-center justify-center py-5 pl-2">
+                                                                <span className="text-base font-bold text-slate-400 group-hover:text-primary transition-colors mb-1">＋ {slotType}を登録</span>
+                                                                {restrictionDetail && <span className="text-sm font-medium text-blue-500 dark:text-blue-400 mt-1">{restrictionDetail}</span>}
+                                                            </div>
+                                                        </Link>
+                                                    );
+                                                };
+
+                                                return (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2 pt-1">
+                                                        {renderScheduleBlock('葬儀', existingFuneral, canAddFuneral, funeralRestrictionDetail)}
+                                                        {renderScheduleBlock('通夜', existingWake, canAddWake, wakeRestrictionDetail)}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 ))}
