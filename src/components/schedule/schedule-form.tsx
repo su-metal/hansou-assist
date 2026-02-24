@@ -140,11 +140,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
     const watchTime = form.watch("ceremony_time")
     const watchStatus = form.watch("status")
 
-    React.useEffect(() => {
-        if (watchStatus === "external") {
-            form.setValue("remarks", "")
-        }
-    }, [watchStatus, form])
+    // 以前は external の際に備考をクリアしていましたが、入力できるように変更しました
 
     const selectedHallDisplay = React.useMemo(() => {
         for (const fac of facilities) {
@@ -706,7 +702,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                 <FormItem>
                                     <FormLabel>備考</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="自由入力" {...field} disabled={watchStatus === "external"} />
+                                        <Input placeholder="自由入力" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
