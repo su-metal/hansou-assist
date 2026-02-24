@@ -32,7 +32,7 @@ type Schedule = {
     hall_id: string
     date: string
     slot_type: '葬儀' | '通夜'
-    status: 'available' | 'occupied' | 'preparing'
+    status: 'available' | 'occupied' | 'preparing' | 'external'
     ceremony_time?: string
 }
 
@@ -43,6 +43,7 @@ export function CalendarView() {
     const [mode, setMode] = useState<CalendarMode>('week')
     const [rokuyoData, setRokuyoData] = useState<Record<string, Rokuyo>>({})
     const [schedules, setSchedules] = useState<Schedule[]>([])
+    const [capacities, setCapacities] = useState<Record<string, number>>({}) // Key: "date_hallId"
     const [facilities, setFacilities] = useState<Facility[]>([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
@@ -62,7 +63,7 @@ export function CalendarView() {
         return eachDayOfInterval({ start, end })
     }, [currentDate, mode])
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (signal?: { ignore: boolean }) => {
         if (days.length === 0) return
         setLoading(true)
         const startDateStr = format(days[0], 'yyyy-MM-dd')
@@ -83,6 +84,7 @@ export function CalendarView() {
         `)
                 .order('name');
 
+            if (signal?.ignore) return
             if (facilitiesRes) {
                 setFacilities(facilitiesRes as unknown as Facility[])
             }
@@ -94,6 +96,7 @@ export function CalendarView() {
                 .gte('date', startDateStr)
                 .lte('date', endDateStr)
 
+            if (signal?.ignore) return
             if (rokuyoRes) {
                 const map: Record<string, Rokuyo> = {}
                 rokuyoRes.forEach((r: Rokuyo) => {
@@ -116,31 +119,51 @@ export function CalendarView() {
                 .gte('date', startDateStr)
                 .lte('date', endDateStr)
 
+            if (signal?.ignore) return
             if (scheduleRes) {
                 setSchedules(scheduleRes as unknown as Schedule[])
+            }
+            // Fetch Capacities
+            const { data: capacityRes } = await supabase
+                .from('daily_capacities')
+                .select('date, hall_id, max_count')
+                .gte('date', startDateStr)
+                .lte('date', endDateStr)
+
+            if (signal?.ignore) return
+            if (capacityRes) {
+                const map: Record<string, number> = {}
+                capacityRes.forEach((c: { date: string, hall_id: string, max_count: number }) => {
+                    map[`${c.date}_${c.hall_id}`] = c.max_count
+                })
+                setCapacities(map)
             }
         } catch (error) {
             console.error("Error fetching data:", error)
         } finally {
-            setLoading(false)
+            if (!signal?.ignore) setLoading(false)
         }
     }, [days, supabase])
 
     useEffect(() => {
-        const init = async () => {
-            await fetchData()
-        }
-        init()
+        let ignore = false
+        const signal = { ignore }
+
+        fetchData(signal)
 
         // Subscribe to real-time updates
         const channel = supabase
             .channel('calendar-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-                fetchData()
+                fetchData(signal)
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_capacities' }, () => {
+                fetchData(signal)
             })
             .subscribe()
 
         return () => {
+            signal.ignore = true
             supabase.removeChannel(channel)
         }
     }, [fetchData, supabase])
@@ -214,15 +237,20 @@ export function CalendarView() {
                                 const isSat = day.getDay() === 6
 
                                 return (
-                                    <th key={dateStr} className={`p-2 border font-medium text-center min-w-[80px] ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
-                                        <div className={`${isSun ? 'text-red-500' : isSat ? 'text-blue-500' : ''}`}>
-                                            {format(day, 'd')} ({dayName})
-                                        </div>
-                                        {rokuyo && (
-                                            <div className={`text-xs mt-1 ${isTomobiki ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
-                                                {rokuyo.rokuyo}
+                                    <th key={dateStr} className={`p-0 border font-medium text-center min-w-[80px] ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
+                                        <Link
+                                            href={`/schedule?date=${dateStr}`}
+                                            className="block p-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                        >
+                                            <div className={`${isSun ? 'text-red-500' : isSat ? 'text-blue-500' : ''}`}>
+                                                {format(day, 'd')} ({dayName})
                                             </div>
-                                        )}
+                                            {rokuyo && (
+                                                <div className={`text-xs mt-1 ${isTomobiki ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
+                                                    {rokuyo.rokuyo}
+                                                </div>
+                                            )}
+                                        </Link>
                                     </th>
                                 )
                             })}
@@ -236,7 +264,7 @@ export function CalendarView() {
                                 </td>
                             </tr>
                         ) : (
-                            facilities.map(facility => (
+                            facilities.map((facility: Facility) => (
                                 <React.Fragment key={facility.id}>
                                     <tr className="bg-secondary/50">
                                         <td colSpan={days.length + 1} className="border-b bg-secondary/80 p-0">
@@ -245,7 +273,7 @@ export function CalendarView() {
                                             </div>
                                         </td>
                                     </tr>
-                                    {facility.halls.map(hall => (
+                                    {facility.halls.map((hall: Hall) => (
                                         <tr key={hall.id}>
                                             <td className="p-2 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-medium truncate text-gray-700 dark:text-gray-300 min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                                 {hall.name}
@@ -255,41 +283,80 @@ export function CalendarView() {
                                                 const daySchedules = getSchedules(hall.id, dateStr)
                                                 const rokuyo = rokuyoData[dateStr]
                                                 const isTomobiki = rokuyo?.is_tomobiki
+                                                const maxCount = capacities[`${dateStr}_${hall.id}`]
+                                                const isFull = maxCount !== undefined && daySchedules.length >= maxCount
 
                                                 return (
-                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] vertical-top ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''}`}>
+                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] vertical-top ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''
+                                                        } ${isFull ? 'bg-red-50 dark:bg-red-900/20' : ''} group`}>
+                                                        {/* Cell Background Link to List View */}
+                                                        <Link
+                                                            href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                            className="absolute inset-0 z-0 bg-transparent hover:bg-slate-400/5 transition-colors"
+                                                        />
+
                                                         {isTomobiki && (
-                                                            <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none">
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none z-0">
                                                                 <span className="text-xl font-bold text-red-500 -rotate-12 whitespace-nowrap">友引</span>
                                                             </div>
                                                         )}
 
-                                                        <div className="flex flex-col gap-1">
+                                                        <div className="relative flex flex-col gap-1 z-10 pointer-events-none">
+                                                            <div className="flex justify-end pr-1 pt-0.5">
+                                                                {maxCount !== undefined ? (
+                                                                    <span className={`text-[9px] font-bold px-1 rounded-sm ${isFull ? 'bg-red-500 text-white' : 'text-muted-foreground'}`}>
+                                                                        {daySchedules.length} / {maxCount}
+                                                                    </span>
+                                                                ) : daySchedules.length > 0 ? (
+                                                                    <span className="text-[9px] font-bold px-1 rounded-sm text-yellow-600 dark:text-yellow-400">
+                                                                        {daySchedules.length}件
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
                                                             {daySchedules.map(schedule => (
                                                                 <Link
-                                                                    href={`/schedule/${schedule.id}`}
+                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
                                                                     key={schedule.id}
                                                                     className={`
-                                                                        block rounded px-1.5 py-0.5 text-[11px] font-medium text-white truncate
-                                                                        ${schedule.status === 'occupied' ? 'bg-red-500 hover:bg-red-600' :
-                                                                            schedule.status === 'preparing' ? 'bg-amber-500 hover:bg-amber-600' :
-                                                                                'bg-emerald-500 hover:bg-emerald-600'}
+                                                                        block rounded px-1.5 py-0.5 text-[11px] font-medium text-white truncate pointer-events-auto
+                                                                        ${schedule.status === 'external' ? 'bg-slate-400 hover:bg-slate-500' :
+                                                                            schedule.status === 'occupied' ? 'bg-red-500 hover:bg-red-600' :
+                                                                                schedule.status === 'preparing' ? 'bg-amber-500 hover:bg-amber-600' :
+                                                                                    'bg-emerald-500 hover:bg-emerald-600'}
                                                                         transition-colors
                                                                     `}
                                                                     title={`${schedule.ceremony_time} ${schedule.slot_type}`}
+                                                                    style={schedule.status === 'external' ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 8px)' } : undefined}
                                                                 >
-                                                                    <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>
-                                                                    {schedule.slot_type === '通夜' ? '通' : '葬'}
+                                                                    {schedule.status === 'external' ? (
+                                                                        <>
+                                                                            <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>他
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>
+                                                                            {schedule.slot_type === '通夜' ? '通' : '葬'}
+                                                                        </>
+                                                                    )}
                                                                 </Link>
                                                             ))}
 
                                                             {/* New Reservation Link */}
-                                                            <Link
-                                                                href={`/schedule/new?date=${dateStr}&hall_id=${hall.id}`}
-                                                                className="opacity-0 hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 rounded transition-all"
-                                                            >
-                                                                ＋ 予約
-                                                            </Link>
+                                                            {maxCount === undefined ? (
+                                                                <Link
+                                                                    href={`/capacities?date=${dateStr}&hall_id=${hall.id}`}
+                                                                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-red-500 border border-dashed border-transparent hover:border-red-300 dark:hover:border-red-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
+                                                                >
+                                                                    枠未設定
+                                                                </Link>
+                                                            ) : (
+                                                                <Link
+                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 dark:hover:border-slate-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
+                                                                >
+                                                                    ＋ 予約
+                                                                </Link>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 )
@@ -302,6 +369,6 @@ export function CalendarView() {
                     </tbody>
                 </table>
             </div>
-        </div>
+        </div >
     )
 }

@@ -60,6 +60,15 @@ const facilitiesData = [
         ]
     },
     {
+        name: 'JA蒲郡市やすらぎセンター',
+        area: '蒲郡市',
+        phone: '0533-67-6652',
+        halls: [
+            { name: 'やすらぎホール蒲郡', capacity: 100, has_waiting_room: true },
+            { name: 'やすらぎホール形原', capacity: 100, has_waiting_room: true }
+        ]
+    },
+    {
         name: 'しんしろ斎苑',
         area: '新城市',
         phone: '0536-22-2211',
