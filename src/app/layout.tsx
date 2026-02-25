@@ -13,7 +13,12 @@ export const viewport = {
 export const metadata: Metadata = {
   title: '搬送アシスト',
   description: '葬儀搬送スケジュール管理システム',
+  applicationName: '搬送アシスト',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/icons/icon-192x192.png',
+    apple: '/icons/icon-192x192.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
