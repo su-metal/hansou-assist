@@ -208,7 +208,12 @@ function ScheduleListContent() {
                     .order('time')
 
                 if (!signal?.ignore) {
-                    setCremationVacancies(cremationData || [])
+                    // Sort data to ensure 9:30 comes before 10:00 (string sorting issue)
+                    const sortedData = (cremationData || []).sort((a: CremationVacancy, b: CremationVacancy) => {
+                        const pad = (s: string) => s.length === 4 ? '0' + s : s
+                        return pad(a.time).localeCompare(pad(b.time))
+                    })
+                    setCremationVacancies(sortedData)
                 }
             } else {
                 if (!signal?.ignore) {
@@ -460,7 +465,7 @@ function ScheduleListContent() {
                                         </DialogTrigger>
                                         <DialogContent className="w-[95vw] max-w-lg rounded-xl">
                                             <DialogHeader>
-                                                <DialogTitle className="text-left flex items-center justify-between">
+                                                <DialogTitle className="text-left flex items-center gap-4">
                                                     <span>とぼね空き状況</span>
                                                     <Button
                                                         variant="secondary"
