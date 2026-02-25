@@ -221,11 +221,11 @@ export function CalendarView() {
                 </ToggleGroup>
             </div>
 
-            <div className="relative overflow-x-auto border rounded-md">
+            <div className="relative overflow-auto border rounded-md max-h-[75vh] shadow-inner">
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="bg-muted text-muted-foreground">
                         <tr>
-                            <th className="p-2 border-b border-r sticky left-0 bg-muted z-30 font-medium min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] text-center shadow-[1px_0_0_rgba(0,0,0,0.1)]">
+                            <th className="p-2 border-b border-r sticky left-0 top-0 bg-muted z-50 font-medium min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] text-center shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                 ホール / 日付
                             </th>
                             {days.map((day) => {
@@ -237,7 +237,7 @@ export function CalendarView() {
                                 const isSat = day.getDay() === 6
 
                                 return (
-                                    <th key={dateStr} className={`p-0 border font-medium text-center min-w-[80px] ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
+                                    <th key={dateStr} className={`p-0 border font-medium text-center min-w-[80px] sticky top-0 z-40 bg-muted ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
                                         <Link
                                             href={`/schedule?date=${dateStr}`}
                                             className="block p-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -268,7 +268,7 @@ export function CalendarView() {
                                 <React.Fragment key={facility.id}>
                                     <tr className="bg-secondary/50">
                                         <td colSpan={days.length + 1} className="border-b bg-secondary/80 p-0">
-                                            <div className="sticky left-0 w-max px-3 py-2 font-bold z-20 text-left">
+                                            <div className="sticky left-0 w-max px-3 py-2 font-bold z-10 text-left">
                                                 {facility.name}
                                             </div>
                                         </td>
