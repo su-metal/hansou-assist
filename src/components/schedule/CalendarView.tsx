@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, startOfMonth, endOfMonth, addDays, startOfDay, isToday } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -47,6 +47,8 @@ export function CalendarView() {
     const [facilities, setFacilities] = useState<Facility[]>([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
+    const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+    const todayRef = React.useRef<HTMLTableCellElement>(null)
 
     const days = React.useMemo(() => {
         let start: Date
@@ -146,6 +148,15 @@ export function CalendarView() {
     }, [days, supabase])
 
     useEffect(() => {
+        if (!loading && todayRef.current && scrollContainerRef.current) {
+            const container = scrollContainerRef.current
+            const todayElement = todayRef.current
+            const scrollLeft = todayElement.offsetLeft - container.offsetWidth / 2 + todayElement.offsetWidth / 2
+            container.scrollTo({ left: scrollLeft, behavior: 'smooth' })
+        }
+    }, [loading, mode])
+
+    useEffect(() => {
         let ignore = false
         const signal = { ignore }
 
@@ -221,7 +232,7 @@ export function CalendarView() {
                 </ToggleGroup>
             </div>
 
-            <div className="relative overflow-auto border rounded-md max-h-[75vh] shadow-inner">
+            <div ref={scrollContainerRef} className="relative overflow-auto border rounded-md max-h-[75vh] shadow-inner">
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="bg-muted text-muted-foreground">
                         <tr>
@@ -237,7 +248,11 @@ export function CalendarView() {
                                 const isSat = day.getDay() === 6
 
                                 return (
-                                    <th key={dateStr} className={`p-0 border font-medium text-center min-w-[80px] sticky top-0 z-40 bg-muted ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
+                                    <th
+                                        key={dateStr}
+                                        ref={isToday(day) ? todayRef : null}
+                                        className={`p-0 border font-medium text-center min-w-[80px] sticky top-0 z-40 bg-muted ${isTomobiki ? 'bg-red-50 dark:bg-red-900/10' : ''}`}
+                                    >
                                         <Link
                                             href={`/schedule?date=${dateStr}`}
                                             className="block p-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -275,7 +290,7 @@ export function CalendarView() {
                                     </tr>
                                     {facility.halls.map((hall: Hall) => (
                                         <tr key={hall.id}>
-                                            <td className="p-2 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-medium truncate text-gray-700 dark:text-gray-300 min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
+                                            <td className="p-2 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-medium whitespace-normal break-words text-gray-700 dark:text-gray-300 min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                                 {hall.name}
                                             </td>
                                             {days.map(day => {
