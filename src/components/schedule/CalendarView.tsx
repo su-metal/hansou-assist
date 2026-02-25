@@ -344,7 +344,7 @@ export function CalendarView() {
                                                             {/* New Reservation Link */}
                                                             {maxCount === undefined ? (
                                                                 <Link
-                                                                    href={`/capacities?date=${dateStr}&hall_id=${hall.id}`}
+                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
                                                                     className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-red-500 border border-dashed border-transparent hover:border-red-300 dark:hover:border-red-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
                                                                 >
                                                                     枠未設定

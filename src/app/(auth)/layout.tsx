@@ -18,7 +18,6 @@ export default function AuthLayout({
     const navigation = [
         { name: 'スケジュール一覧', href: '/schedule', icon: List },
         { name: 'カレンダー', href: '/calendar', icon: Calendar },
-        { name: '受け入れ枠設定', href: '/capacities', icon: Settings },
         { name: '設定', href: '/admin', icon: Settings },
     ]
     const handleSignOut = async () => {
