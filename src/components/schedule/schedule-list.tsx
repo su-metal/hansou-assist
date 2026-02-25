@@ -731,29 +731,31 @@ function ScheduleListContent() {
                                                             if (schedule) {
                                                                 if (schedule.status === 'unavailable') {
                                                                     return (
-                                                                        <div
-                                                                            className="block border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 mb-2 flex flex-col relative overflow-hidden ring-1 ring-slate-200 dark:ring-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
-                                                                            onClick={() => {
-                                                                                setSelectedSlot({
-                                                                                    date: dateStr,
-                                                                                    hallId: hall.id,
-                                                                                    hallName: hall.name,
-                                                                                    slotType: slotType,
-                                                                                    currentSchedule: schedule
-                                                                                })
-                                                                                setIsSlotMenuOpen(true)
-                                                                            }}
-                                                                        >
-                                                                            <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 15px, rgba(0,0,0,0.02) 15px, rgba(0,0,0,0.02) 16px)' }}></div>
-                                                                            <div className="flex justify-between items-start mb-1 z-10">
-                                                                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                                                                    {slotType}（不可）
-                                                                                </span>
-                                                                            </div>
-                                                                            <div className="flex flex-col items-center justify-center py-4 relative z-10">
-                                                                                <div className="relative w-12 h-12 flex items-center justify-center text-slate-300 dark:text-slate-700">
-                                                                                    <div className="absolute w-full h-[2.5px] bg-current rotate-45 rounded-full"></div>
-                                                                                    <div className="absolute w-full h-[2.5px] bg-current -rotate-45 rounded-full"></div>
+                                                                        <div className="h-full">
+                                                                            <div
+                                                                                className="block h-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 flex flex-col relative overflow-hidden ring-1 ring-slate-200 dark:ring-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                                                                onClick={() => {
+                                                                                    setSelectedSlot({
+                                                                                        date: dateStr,
+                                                                                        hallId: hall.id,
+                                                                                        hallName: hall.name,
+                                                                                        slotType: slotType,
+                                                                                        currentSchedule: schedule
+                                                                                    })
+                                                                                    setIsSlotMenuOpen(true)
+                                                                                }}
+                                                                            >
+                                                                                <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 15px, rgba(0,0,0,0.02) 15px, rgba(0,0,0,0.02) 16px)' }}></div>
+                                                                                <div className="flex justify-between items-start mb-1 z-10">
+                                                                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                                                        {slotType}（不可）
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="flex flex-col items-center justify-center py-4 relative z-10">
+                                                                                    <div className="relative w-12 h-12 flex items-center justify-center text-slate-300 dark:text-slate-700">
+                                                                                        <div className="absolute w-full h-[2.5px] bg-current rotate-45 rounded-full"></div>
+                                                                                        <div className="absolute w-full h-[2.5px] bg-current -rotate-45 rounded-full"></div>
+                                                                                    </div>
                                                                                 </div>
                                                                             </div>
                                                                         </div>
@@ -762,25 +764,27 @@ function ScheduleListContent() {
 
                                                                 if (schedule.status === 'external') {
                                                                     return (
-                                                                        <div className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 mb-2 opacity-80" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}>
-                                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-xl" />
-                                                                            <div className="flex justify-between items-start mb-2 relative z-0">
-                                                                                <span className="flex items-center gap-1.5 flex-wrap">
-                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${slotType === '葬儀' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
-                                                                                        {slotType}
+                                                                        <div className="h-full">
+                                                                            <div className="block h-full relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 opacity-80 flex flex-col" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}>
+                                                                                <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-xl" />
+                                                                                <div className="flex justify-between items-start mb-2 relative z-0">
+                                                                                    <span className="flex items-center gap-1.5 flex-wrap">
+                                                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${slotType === '葬儀' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                                            {slotType}
+                                                                                        </span>
+                                                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                                                            他社予約
+                                                                                        </span>
                                                                                     </span>
-                                                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                                                                        他社予約
+                                                                                    <span className="font-bold text-lg leading-none text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
+                                                                                </div>
+                                                                                <div className="font-bold text-sm text-slate-500 dark:text-slate-400 mt-2 relative z-0 flex items-center justify-between">
+                                                                                    <span>（斎場ブロック枠）</span>
+                                                                                    <span className="text-[10px] font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
+                                                                                        変更する
+                                                                                        <ChevronRight className="h-2 w-2" />
                                                                                     </span>
-                                                                                </span>
-                                                                                <span className="font-bold text-lg leading-none text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
-                                                                            </div>
-                                                                            <div className="font-bold text-sm text-slate-500 dark:text-slate-400 mt-2 relative z-0 flex items-center justify-between">
-                                                                                <span>（斎場ブロック枠）</span>
-                                                                                <span className="text-[10px] font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
-                                                                                    変更する
-                                                                                    <ChevronRight className="h-2 w-2" />
-                                                                                </span>
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     );
@@ -791,24 +795,29 @@ function ScheduleListContent() {
 
                                                                 const viewStartDateStr = format(currentDate, 'yyyy-MM-dd');
                                                                 return (
-                                                                    <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${viewStartDateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
-                                                                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${colorMap.border}`} />
-                                                                        <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${colorMap.badge}`}>
-                                                                                {slotType}
-                                                                            </span>
-                                                                            <span className="font-bold text-xl leading-none tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
-                                                                        </div>
-                                                                        <div className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1.5 flex items-center justify-between pl-1.5">
-                                                                            <span className="truncate pr-1">{schedule.family_name} 様</span>
-                                                                            <span className="text-[10px] whitespace-nowrap font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
-                                                                                変更する
-                                                                                <ChevronRight className="h-2 w-2" />
-                                                                            </span>
-                                                                        </div>
-                                                                        {schedule.remarks && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-md ml-1.5">{schedule.remarks}</div>}
-                                                                        {schedule.status === 'preparing' && <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mt-2 bg-amber-50 dark:bg-amber-900/20 inline-block px-1.5 py-0.5 rounded ml-1.5">※仮予約</div>}
-                                                                    </Link>
+                                                                    <div className="h-full">
+                                                                        <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${viewStartDateStr}`} className="block h-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors group relative overflow-hidden flex flex-col">
+                                                                            <div className={`absolute top-0 left-0 bottom-0 w-1 ${colorMap.border}`} />
+                                                                            <div className="flex justify-between items-start mb-1 pl-1.5 flex-none">
+                                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${colorMap.badge}`}>
+                                                                                        {slotType}
+                                                                                    </span>
+                                                                                    {schedule.status === 'preparing' && <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">※仮予約</div>}
+                                                                                </div>
+                                                                                <span className="font-bold text-xl leading-none tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
+                                                                            </div>
+                                                                            <div className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1.5 flex items-center justify-between pl-1.5 flex-none">
+                                                                                <span className="truncate pr-1">{schedule.family_name} 様</span>
+                                                                                <span className="text-[10px] whitespace-nowrap font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
+                                                                                    変更する
+                                                                                    <ChevronRight className="h-2 w-2" />
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex-1"></div>
+                                                                            {schedule.remarks && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-md ml-1.5 flex-none">{schedule.remarks}</div>}
+                                                                        </Link>
+                                                                    </div>
                                                                 );
                                                             }
 
@@ -816,43 +825,47 @@ function ScheduleListContent() {
                                                             if (!canAdd) {
                                                                 const reason = restrictionDetail || '予約不可';
                                                                 return (
-                                                                    <div className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl p-3 mb-2 flex flex-col opacity-60 relative overflow-hidden">
-                                                                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${slotType === '葬儀' ? 'bg-slate-300 dark:bg-slate-700' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                                                                        <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${slotType === '葬儀' ? 'bg-purple-100/50 text-purple-700/50 dark:bg-purple-900/10 dark:text-purple-300/50' : 'bg-orange-100/50 text-orange-700/50 dark:bg-orange-900/10 dark:text-orange-300/50'}`}>
-                                                                                {slotType}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex flex-col items-center justify-center py-3 text-center px-2">
-                                                                            <span className="text-sm font-bold text-red-500 mb-0.5">予約不可</span>
-                                                                            <span className="text-[11px] font-medium text-slate-500 leading-tight">{reason}</span>
+                                                                    <div className="h-full">
+                                                                        <div className="block h-full border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl p-3 flex flex-col opacity-60 relative overflow-hidden">
+                                                                            <div className={`absolute top-0 left-0 bottom-0 w-1 ${slotType === '葬儀' ? 'bg-slate-300 dark:bg-slate-700' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                                                            <div className="flex justify-between items-start mb-1 pl-1.5">
+                                                                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${slotType === '葬儀' ? 'bg-purple-100/50 text-purple-700/50 dark:bg-purple-900/10 dark:text-purple-300/50' : 'bg-orange-100/50 text-orange-700/50 dark:bg-orange-900/10 dark:text-orange-300/50'}`}>
+                                                                                    {slotType}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex flex-col items-center justify-center py-3 text-center px-2">
+                                                                                <span className="text-sm font-bold text-red-500 mb-0.5">予約不可</span>
+                                                                                <span className="text-[11px] font-medium text-slate-500 leading-tight">{reason}</span>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 );
                                                             }
 
                                                             return (
-                                                                <div
-                                                                    className="block border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-primary/50 transition-colors flex flex-col mb-2 group relative overflow-hidden cursor-pointer"
-                                                                    onClick={() => {
-                                                                        setSelectedSlot({
-                                                                            date: dateStr,
-                                                                            hallId: hall.id,
-                                                                            hallName: hall.name,
-                                                                            slotType: slotType
-                                                                        })
-                                                                        setIsSlotMenuOpen(true)
-                                                                    }}
-                                                                >
-                                                                    <div className={`absolute top-0 left-0 bottom-0 w-1 opacity-30 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-400' : 'bg-orange-400'}`} />
-                                                                    <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold opacity-60 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
-                                                                            {slotType}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex flex-col items-center justify-center py-3 pl-1.5">
-                                                                        <span className="text-sm font-bold text-slate-400 group-hover:text-primary transition-colors">＋ 登録</span>
-                                                                        {restrictionDetail && <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 mt-0.5">{restrictionDetail}</span>}
+                                                                <div className="h-full">
+                                                                    <div
+                                                                        className="block h-full border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-primary/50 transition-colors flex flex-col group relative overflow-hidden cursor-pointer"
+                                                                        onClick={() => {
+                                                                            setSelectedSlot({
+                                                                                date: dateStr,
+                                                                                hallId: hall.id,
+                                                                                hallName: hall.name,
+                                                                                slotType: slotType
+                                                                            })
+                                                                            setIsSlotMenuOpen(true)
+                                                                        }}
+                                                                    >
+                                                                        <div className={`absolute top-0 left-0 bottom-0 w-1 opacity-30 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-400' : 'bg-orange-400'}`} />
+                                                                        <div className="flex justify-between items-start mb-1 pl-1.5">
+                                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold opacity-60 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                                {slotType}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-col items-center justify-center py-3 pl-1.5">
+                                                                            <span className="text-sm font-bold text-slate-400 group-hover:text-primary transition-colors">＋ 登録</span>
+                                                                            {restrictionDetail && <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 mt-0.5">{restrictionDetail}</span>}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             );
@@ -888,11 +901,9 @@ function ScheduleListContent() {
                                                                     return null;
                                                                 })()}
 
-                                                                <div className="space-y-1.5">
-                                                                    <div className="flex flex-col gap-2">
-                                                                        {renderScheduleBlock('葬儀', existingFuneral, canAddFuneral, funeralRestrictionDetail)}
-                                                                        {renderScheduleBlock('通夜', existingWake, canAddWake, wakeRestrictionDetail)}
-                                                                    </div>
+                                                                <div className="flex-1 flex flex-col gap-2">
+                                                                    {renderScheduleBlock('葬儀', existingFuneral, canAddFuneral, funeralRestrictionDetail)}
+                                                                    {renderScheduleBlock('通夜', existingWake, canAddWake, wakeRestrictionDetail)}
                                                                 </div>
                                                             </div>
                                                         )
