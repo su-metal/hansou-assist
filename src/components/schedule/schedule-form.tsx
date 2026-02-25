@@ -10,6 +10,7 @@ import { Calendar as CalendarIcon, Loader2, X } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Suspense } from "react"
+import { FAMILY_COLORS, getFamilyColorIndex } from "@/lib/constants"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -66,6 +67,7 @@ interface ScheduleFormProps {
         status?: "available" | "occupied" | "preparing" | "external"
         family_name?: string
         remarks?: string
+        color_index?: number
     }
 }
 
@@ -77,6 +79,7 @@ const formSchema = z.object({
     status: z.enum(["available", "occupied", "preparing", "external"]),
     family_name: z.string().optional(),
     remarks: z.string().optional(),
+    color_index: z.number().optional(),
 }).refine(data => data.status === "external" || (data.family_name && data.family_name.trim().length > 0), {
     message: "喪家名を入力してください",
     path: ["family_name"],
@@ -99,6 +102,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
     const [tomobikiWarning, setTomobikiWarning] = React.useState(false)
     const [existingSchedules, setExistingSchedules] = React.useState<any[]>([])
     const [step, setStep] = React.useState<1 | 2>(initialData?.hall_id || scheduleId ? 2 : 1)
+    const [isColorManual, setIsColorManual] = React.useState(!!initialData?.color_index)
 
     // Context from URL to return to same view
     const backFacilityId = searchParams.get('back_facility_id') || searchParams.get('facility_id')
@@ -114,6 +118,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
             status: initialData?.status || "occupied",
             family_name: initialData?.family_name || "",
             remarks: initialData?.remarks || "",
+            color_index: initialData?.color_index,
         },
     })
 
@@ -147,6 +152,13 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
     const watchHallId = form.watch("hall_id")
     const watchTime = form.watch("ceremony_time")
     const watchStatus = form.watch("status")
+    const watchFamilyName = form.watch("family_name")
+
+    React.useEffect(() => {
+        if (!isColorManual && watchFamilyName) {
+            form.setValue("color_index", getFamilyColorIndex(watchFamilyName))
+        }
+    }, [watchFamilyName, isColorManual, form])
 
     // 以前は external の際に備考をクリアしていましたが、入力できるように変更しました
 
@@ -266,10 +278,10 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
             return
         }
 
-        // --- 葬儀 12:00 制限 & 1件制限 ---
+        // --- 葬儀 14:00 制限 & 1件制限 ---
         if (values.slot_type === '葬儀') {
-            if (values.ceremony_time > "12:00") {
-                toast.error("葬儀の開始時間は12:00までです。")
+            if (values.ceremony_time > "14:00") {
+                toast.error("葬儀の開始時間は14:00までです。")
                 setLoading(false)
                 return
             }
@@ -442,6 +454,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                     status: values.status,
                     family_name: values.family_name,
                     remarks: values.remarks,
+                    color_index: values.color_index,
                 })
                 .eq('id', scheduleId)
             error = updateError;
@@ -456,7 +469,8 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                 family_name: values.family_name,
                 remarks: values.remarks,
                 registered_by: session.user.id,
-                source: 'manual'
+                source: 'manual',
+                color_index: values.color_index,
             })
             error = insertError;
         }
@@ -470,7 +484,9 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
             // Redirect with context
             const params = new URLSearchParams()
             if (backFacilityId) params.set('facility_id', backFacilityId)
-            const redirectDate = values.date || backDate
+
+            // Prioritize backDate (original view start) over values.date (edited day)
+            const redirectDate = backDate || values.date
             if (redirectDate) params.set('date', redirectDate)
 
             const redirectUrl = `/schedule${params.toString() ? `?${params.toString()}` : ''}`
@@ -573,9 +589,9 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                 if (otherWake) return true;
                             }
 
-                            // 葬儀は12:00まで、通夜は12:00以降
-                            if (slotType === '葬儀' && testMin > 12 * 60) return true;
-                            if (slotType === '通夜' && testMin <= 12 * 60) return true;
+                            // 葬儀は14:00まで、通夜は14:00以降
+                            if (slotType === '葬儀' && testMin > 14 * 60) return true;
+                            if (slotType === '通夜' && testMin <= 14 * 60) return true;
 
                             if (slotType === '通夜') {
                                 const funeral = existingSchedules.find(s => s.slot_type === '葬儀' && s.id !== scheduleId);
@@ -776,6 +792,49 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                         <div className="flex items-center gap-2">
                                             <Input placeholder="例: 佐藤" {...field} />
                                             <span className="font-medium whitespace-nowrap">家 様</span>
+                                        </div>
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+
+                        <FormField
+                            control={form.control}
+                            name="color_index"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <div className="flex items-center justify-between">
+                                        <FormLabel>カードのアクセントカラー</FormLabel>
+                                        {isColorManual && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="xs"
+                                                onClick={() => {
+                                                    setIsColorManual(false);
+                                                    form.setValue("color_index", getFamilyColorIndex(watchFamilyName));
+                                                }}
+                                                className="h-6 text-[10px] text-muted-foreground hover:text-primary"
+                                            >
+                                                自動設定に戻す
+                                            </Button>
+                                        )}
+                                    </div>
+                                    <FormControl>
+                                        <div className="flex flex-wrap gap-2.5 pt-1">
+                                            {FAMILY_COLORS.map((color, index) => (
+                                                <button
+                                                    key={index}
+                                                    type="button"
+                                                    className={`w-9 h-9 rounded-full border-2 transition-all ${color.border} ${field.value === index ? 'border-primary scale-110 shadow-md' : 'border-white dark:border-slate-900 opacity-60 hover:opacity-100 hover:scale-105'}`}
+                                                    onClick={() => {
+                                                        field.onChange(index);
+                                                        setIsColorManual(true);
+                                                    }}
+                                                    title={color.name}
+                                                />
+                                            ))}
                                         </div>
                                     </FormControl>
                                     <FormMessage />
