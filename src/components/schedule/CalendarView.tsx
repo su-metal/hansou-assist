@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import Link from 'next/link'
+import { FAMILY_COLORS, getFamilyColorIndex } from '@/lib/constants'
 
 type Rokuyo = {
     date: string
@@ -34,6 +35,8 @@ type Schedule = {
     slot_type: '葬儀' | '通夜'
     status: 'available' | 'occupied' | 'preparing' | 'external'
     ceremony_time?: string
+    family_name?: string
+    color_index?: number
 }
 
 type CalendarMode = 'week' | 'month'
@@ -43,7 +46,6 @@ export function CalendarView() {
     const [mode, setMode] = useState<CalendarMode>('week')
     const [rokuyoData, setRokuyoData] = useState<Record<string, Rokuyo>>({})
     const [schedules, setSchedules] = useState<Schedule[]>([])
-    const [capacities, setCapacities] = useState<Record<string, number>>({}) // Key: "date_hallId"
     const [facilities, setFacilities] = useState<Facility[]>([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
@@ -116,7 +118,9 @@ export function CalendarView() {
             date,
             slot_type,
             status,
-            ceremony_time
+            ceremony_time,
+            family_name,
+            color_index
         `)
                 .gte('date', startDateStr)
                 .lte('date', endDateStr)
@@ -124,21 +128,6 @@ export function CalendarView() {
             if (signal?.ignore) return
             if (scheduleRes) {
                 setSchedules(scheduleRes as unknown as Schedule[])
-            }
-            // Fetch Capacities
-            const { data: capacityRes } = await supabase
-                .from('daily_capacities')
-                .select('date, hall_id, max_count')
-                .gte('date', startDateStr)
-                .lte('date', endDateStr)
-
-            if (signal?.ignore) return
-            if (capacityRes) {
-                const map: Record<string, number> = {}
-                capacityRes.forEach((c: { date: string, hall_id: string, max_count: number }) => {
-                    map[`${c.date}_${c.hall_id}`] = c.max_count
-                })
-                setCapacities(map)
             }
         } catch (error) {
             console.error("Error fetching data:", error)
@@ -166,9 +155,6 @@ export function CalendarView() {
         const channel = supabase
             .channel('calendar-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-                fetchData(signal)
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_capacities' }, () => {
                 fetchData(signal)
             })
             .subscribe()
@@ -298,12 +284,9 @@ export function CalendarView() {
                                                 const daySchedules = getSchedules(hall.id, dateStr)
                                                 const rokuyo = rokuyoData[dateStr]
                                                 const isTomobiki = rokuyo?.is_tomobiki
-                                                const maxCount = capacities[`${dateStr}_${hall.id}`]
-                                                const isFull = maxCount !== undefined && daySchedules.length >= maxCount
-
                                                 return (
-                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] vertical-top ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''
-                                                        } ${isFull ? 'bg-red-50 dark:bg-red-900/20' : ''} group`}>
+                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] align-middle ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''
+                                                        } group`}>
                                                         {/* Cell Background Link to List View */}
                                                         <Link
                                                             href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
@@ -317,61 +300,48 @@ export function CalendarView() {
                                                         )}
 
                                                         <div className="relative flex flex-col gap-1 z-10 pointer-events-none">
-                                                            <div className="flex justify-end pr-1 pt-0.5">
-                                                                {maxCount !== undefined ? (
-                                                                    <span className={`text-[9px] font-bold px-1 rounded-sm ${isFull ? 'bg-red-500 text-white' : 'text-muted-foreground'}`}>
-                                                                        {daySchedules.length} / {maxCount}
-                                                                    </span>
-                                                                ) : daySchedules.length > 0 ? (
-                                                                    <span className="text-[9px] font-bold px-1 rounded-sm text-yellow-600 dark:text-yellow-400">
-                                                                        {daySchedules.length}件
-                                                                    </span>
-                                                                ) : null}
-                                                            </div>
-                                                            {daySchedules.map(schedule => (
-                                                                <Link
-                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
-                                                                    key={schedule.id}
-                                                                    className={`
-                                                                        block rounded px-1.5 py-0.5 text-[11px] font-medium text-white truncate pointer-events-auto
-                                                                        ${schedule.status === 'external' ? 'bg-slate-400 hover:bg-slate-500' :
-                                                                            schedule.status === 'occupied' ? 'bg-red-500 hover:bg-red-600' :
-                                                                                schedule.status === 'preparing' ? 'bg-amber-500 hover:bg-amber-600' :
-                                                                                    'bg-emerald-500 hover:bg-emerald-600'}
-                                                                        transition-colors
-                                                                    `}
-                                                                    title={`${schedule.ceremony_time} ${schedule.slot_type}`}
-                                                                    style={schedule.status === 'external' ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 8px)' } : undefined}
-                                                                >
-                                                                    {schedule.status === 'external' ? (
-                                                                        <>
-                                                                            <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>他
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <span className="mr-1 opacity-90">{schedule.ceremony_time}</span>
-                                                                            {schedule.slot_type === '通夜' ? '通' : '葬'}
-                                                                        </>
-                                                                    )}
-                                                                </Link>
-                                                            ))}
+                                                            {daySchedules.map(schedule => {
+                                                                const colorIndex = schedule.color_index ?? getFamilyColorIndex(schedule.family_name);
+                                                                const colorMap = FAMILY_COLORS[colorIndex] || FAMILY_COLORS[0];
+
+                                                                return (
+                                                                    <Link
+                                                                        href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                                        key={schedule.id}
+                                                                        className={`
+                                                                            block rounded px-1.5 py-1 text-[10px] sm:text-[11px] font-medium text-white pointer-events-auto transition-colors
+                                                                            ${schedule.status === 'external' ? 'bg-slate-400 hover:bg-slate-500' : colorMap.border + ' hover:brightness-110'}
+                                                                        `}
+                                                                        title={`${schedule.ceremony_time} ${schedule.slot_type} ${schedule.family_name || ''}`}
+                                                                        style={schedule.status === 'external' ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 8px)' } : undefined}
+                                                                    >
+                                                                        {schedule.status === 'external' ? (
+                                                                            <div className="flex items-center gap-1">
+                                                                                <span className="opacity-90">{schedule.ceremony_time}</span>
+                                                                                <span>他</span>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="flex flex-col leading-tight">
+                                                                                <div className="flex items-center gap-1 opacity-90">
+                                                                                    <span>{schedule.ceremony_time}</span>
+                                                                                    <span>{schedule.slot_type === '通夜' ? '通' : '葬'}</span>
+                                                                                </div>
+                                                                                <div className="truncate font-bold">
+                                                                                    {schedule.family_name} 様
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </Link>
+                                                                );
+                                                            })}
 
                                                             {/* New Reservation Link */}
-                                                            {maxCount === undefined ? (
-                                                                <Link
-                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
-                                                                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-red-500 border border-dashed border-transparent hover:border-red-300 dark:hover:border-red-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
-                                                                >
-                                                                    枠未設定
-                                                                </Link>
-                                                            ) : (
-                                                                <Link
-                                                                    href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
-                                                                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 dark:hover:border-slate-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
-                                                                >
-                                                                    ＋ 予約
-                                                                </Link>
-                                                            )}
+                                                            <Link
+                                                                href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 dark:hover:border-slate-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
+                                                            >
+                                                                ＋ 予約
+                                                            </Link>
                                                         </div>
                                                     </td>
                                                 )

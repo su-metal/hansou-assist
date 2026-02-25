@@ -24,6 +24,7 @@ import { Suspense } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { syncCremationVacancies } from '@/lib/actions/cremation-vacancy'
 import { toast } from 'sonner'
+import { FAMILY_COLORS, getFamilyColorIndex } from '@/lib/constants'
 
 interface TurnoverRule {
     funeral_time: string
@@ -58,6 +59,7 @@ type Schedule = {
     ceremony_time?: string
     hall_id?: string
     remarks?: string
+    color_index?: number
 }
 
 type CremationVacancy = {
@@ -710,11 +712,15 @@ function ScheduleListContent() {
                                                             );
                                                         }
 
+                                                        const colorIndex = schedule.color_index ?? getFamilyColorIndex(schedule.family_name);
+                                                        const colorMap = FAMILY_COLORS[colorIndex] || FAMILY_COLORS[0];
+
+                                                        const viewStartDateStr = format(currentDate, 'yyyy-MM-dd');
                                                         return (
-                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
-                                                                <div className={`absolute top-0 left-0 bottom-0 w-1 ${slotType === '葬儀' ? 'bg-purple-500' : 'bg-orange-500'}`} />
+                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${viewStartDateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
+                                                                <div className={`absolute top-0 left-0 bottom-0 w-1 ${colorMap.border}`} />
                                                                 <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300'}`}>
+                                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${colorMap.badge}`}>
                                                                         {slotType}
                                                                     </span>
                                                                     <span className="font-bold text-xl leading-none tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
@@ -859,7 +865,7 @@ function ScheduleListContent() {
                                         className="w-full h-14 text-base font-bold flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-200 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 shadow-sm transition-all"
                                         asChild
                                     >
-                                        <Link href={`/schedule/new?date=${selectedSlot.date}&hall_id=${selectedSlot.hallId}&slot_type=${selectedSlot.slotType}&back_facility_id=${activeFacility.id}&back_date=${selectedSlot.date}`}>
+                                        <Link href={`/schedule/new?date=${selectedSlot.date}&hall_id=${selectedSlot.hallId}&slot_type=${selectedSlot.slotType}&back_facility_id=${activeFacility.id}&back_date=${format(currentDate, 'yyyy-MM-dd')}`}>
                                             <Edit2 className="h-5 w-5 text-primary" />
                                             予約を登録する
                                         </Link>

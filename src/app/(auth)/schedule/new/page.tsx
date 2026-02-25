@@ -12,9 +12,7 @@ export default async function NewSchedulePage({ searchParams }: PageProps) {
         date: typeof params.date === 'string' ? params.date : undefined,
         hall_id: typeof params.hall_id === 'string' ? params.hall_id : undefined,
         ceremony_time: typeof params.time === 'string' ? params.time : undefined,
-        // Default values for other required fields to satisfy the type if needed, 
-        // asking ScheduleForm to handle partials would be better but for now:
-        slot_type: "葬儀" as const,
+        slot_type: (params.slot_type === "通夜" ? "通夜" : "葬儀") as "葬儀" | "通夜",
         status: "occupied" as const,
         family_name: "",
     }
