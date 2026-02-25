@@ -51,6 +51,7 @@ interface Facility {
     name: string;
     funeral_block_time: string | null;
     turnover_interval_hours: number | null;
+    wake_min_time: string | null;
     turnover_rules: TurnoverRule[] | null;
     halls: Hall[];
 }
@@ -125,6 +126,7 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                     name,
                     funeral_block_time,
                     turnover_interval_hours,
+                    wake_min_time,
                     turnover_rules,
                     halls (
                         id,
@@ -243,7 +245,15 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
 
         // 3. インターバル時間の適用
         const intervalMin = (facility.turnover_interval_hours ?? 8) * 60;
-        return { minWakeMin: fMin + intervalMin, isForbidden: false };
+        const calculatedMin = fMin + intervalMin;
+
+        // 4. 【新規】通夜受付開始時刻（最低ライン）のチェック
+        const wakeMinLimit = timeToMinutes(facility.wake_min_time);
+        if (wakeMinLimit !== null && calculatedMin < wakeMinLimit) {
+            return { minWakeMin: wakeMinLimit, isForbidden: false, isByWakeMinLimit: true };
+        }
+
+        return { minWakeMin: calculatedMin, isForbidden: false };
     };
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -350,7 +360,12 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                             const minWakeTimeHour = Math.floor(minWakeMin / 60);
                             const minWakeTimeMin = minWakeMin % 60;
                             const formattedAllowedTime = `${minWakeTimeHour.toString().padStart(2, '0')}:${minWakeTimeMin.toString().padStart(2, '0')}`;
-                            const reason = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+
+                            let reason = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+                            if (minWakeMin === timeToMinutes(selectedFacility.wake_min_time)) {
+                                reason = "斎場の通夜受付開始時刻";
+                            }
+
                             toast.error(`同ホールの葬儀が ${existingFuneral.ceremony_time} 開式のため、通夜は ${formattedAllowedTime} 以降にする必要があります。(${reason})`)
                             setLoading(false)
                             return
@@ -653,7 +668,17 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                                                 const minWakeTimeHour = Math.floor(minWakeMin / 60);
                                                 const minWakeTimeMin = minWakeMin % 60;
                                                 const formattedTime = `${minWakeTimeHour.toString().padStart(2, '0')}:${minWakeTimeMin.toString().padStart(2, '0')}`;
-                                                const ruleInfo = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+
+                                                let ruleInfo = matchedRule ? "個別ルール" : `${selectedFacility.turnover_interval_hours ?? 8}時間ルール`;
+                                                if (minWakeMin === timeToMinutes(selectedFacility.wake_min_time)) {
+                                                    ruleInfo = "斎場の通夜受付開始時刻";
+                                                }
+
+                                                return (
+                                                    <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
+                                                        同ホールの葬儀(${funeral.ceremony_time})に基づき、通夜は{formattedTime}以降のみ選択可能です。({ruleInfo})
+                                                    </p>
+                                                );
 
                                                 return (
                                                     <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
