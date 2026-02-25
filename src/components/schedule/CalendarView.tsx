@@ -222,8 +222,11 @@ export function CalendarView() {
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="bg-muted text-muted-foreground">
                         <tr>
-                            <th className="p-2 border-b border-r sticky left-0 top-0 bg-muted z-50 font-medium min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] text-center shadow-[1px_0_0_rgba(0,0,0,0.1)]">
-                                ホール / 日付
+                            <th className="p-0 border-b border-r sticky left-0 top-0 bg-muted z-50 font-medium min-w-[70px] sm:min-w-[90px] max-w-[70px] sm:max-w-[90px] shadow-[1px_0_0_rgba(0,0,0,0.1)] overflow-hidden">
+                                <div className="relative h-full w-full py-4 text-[10px] sm:text-[11px]" style={{ background: 'linear-gradient(to top right, transparent calc(50% - 0.5px), hsl(var(--muted-foreground) / 0.2) 50%, transparent calc(50% + 0.5px))' }}>
+                                    <span className="absolute top-1.5 right-1.5 leading-none">日付</span>
+                                    <span className="absolute bottom-1.5 left-1.5 leading-none">ホール</span>
+                                </div>
                             </th>
                             {days.map((day) => {
                                 const dateStr = format(day, 'yyyy-MM-dd')
@@ -276,7 +279,7 @@ export function CalendarView() {
                                     </tr>
                                     {facility.halls.map((hall: Hall) => (
                                         <tr key={hall.id}>
-                                            <td className="p-2 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-medium whitespace-normal break-words text-gray-700 dark:text-gray-300 min-w-[120px] sm:min-w-[150px] max-w-[120px] sm:max-w-[150px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
+                                            <td className="p-1.5 border-b border-r sticky left-0 bg-white dark:bg-slate-900 z-20 font-bold whitespace-normal break-words text-xs sm:text-[13px] leading-tight text-slate-900 dark:text-slate-100 min-w-[70px] sm:min-w-[90px] max-w-[70px] sm:max-w-[90px] shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                                                 {hall.name}
                                             </td>
                                             {days.map(day => {
