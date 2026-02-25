@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, ExternalLink } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, ExternalLink, Edit2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     Dialog,
@@ -524,12 +524,14 @@ function ScheduleListContent() {
                                     <div key={hall.id} className="p-4 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <div className="mb-2 font-medium text-slate-900 dark:text-slate-100 border-l-4 border-primary pl-2 flex justify-between items-center">
                                             <span>{hall.name}</span>
-                                            <span className={`text-sm font-bold ${hall.schedules.length >= (hall.max_count ?? 1)
-                                                ? 'text-red-500'
-                                                : 'text-muted-foreground'
-                                                }`}>
-                                                ({hall.schedules.length} / {hall.max_count !== undefined ? hall.max_count : '-'})
-                                            </span>
+                                            <CapacitySelector
+                                                hallId={hall.id}
+                                                currentCount={hall.schedules.length}
+                                                maxCount={hall.max_count}
+                                                dateStr={format(currentDate, 'yyyy-MM-dd')}
+                                                supabase={supabase}
+                                                onSaved={() => fetchSchedules(currentDate, undefined, true)}
+                                            />
                                         </div>
 
                                         {/* ホール単位の制約告知 */}
@@ -655,7 +657,10 @@ function ScheduleListContent() {
                                                                 </div>
                                                                 <div className="font-bold text-xl text-slate-900 dark:text-slate-100 mt-2 flex items-center justify-between pl-2">
                                                                     <span>{schedule.family_name} 様</span>
-                                                                    <span className="text-sm font-medium text-slate-400 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100">詳細 ／ 編集 ＞</span>
+                                                                    <span className="text-xs font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-2 py-1 rounded-full border border-primary/10">
+                                                                        変更する
+                                                                        <ChevronRight className="h-3 w-3" />
+                                                                    </span>
                                                                 </div>
                                                                 {schedule.remarks && <div className="text-sm text-slate-500 dark:text-slate-400 mt-3 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg ml-2">{schedule.remarks}</div>}
                                                                 {schedule.status === 'preparing' && <div className="text-sm font-bold text-amber-600 dark:text-amber-400 mt-3 bg-amber-50 dark:bg-amber-900/20 inline-block px-2 py-1 rounded ml-2">※仮予約</div>}
@@ -782,5 +787,92 @@ function InlineCapacityForm({ hallId, dateStr, onSaved, supabase }: { hallId: st
                 </div>
             </div>
         </div>
+    );
+}
+
+function CapacitySelector({
+    hallId,
+    currentCount,
+    maxCount,
+    dateStr,
+    supabase,
+    onSaved
+}: {
+    hallId: string,
+    currentCount: number,
+    maxCount?: number,
+    dateStr: string,
+    supabase: any,
+    onSaved: () => void
+}) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    const handleUpdate = async (newCount: number) => {
+        if (newCount < currentCount) {
+            toast.error(`既に${currentCount}件の予約があるため、上限を${newCount}本に減らすことはできません。`);
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('daily_capacities')
+                .upsert({
+                    hall_id: hallId,
+                    date: dateStr,
+                    max_count: newCount
+                }, { onConflict: 'hall_id, date' });
+
+            if (error) throw error;
+            toast.success("受け入れ枠を更新しました");
+            setIsOpen(false);
+            onSaved();
+        } catch (err) {
+            console.error(err);
+            toast.error("更新に失敗しました");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+            <PopoverTrigger asChild>
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 ${currentCount >= (maxCount ?? 1)
+                    ? 'text-red-500'
+                    : 'text-muted-foreground'
+                    }`}>
+                    <span className="text-sm font-bold">
+                        ({currentCount} / {maxCount !== undefined ? maxCount : '-'})
+                    </span>
+                    <Edit2 className="size-3 opacity-50" />
+                </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-3" align="end">
+                <div className="space-y-3">
+                    <div className="text-sm font-medium text-slate-700 dark:text-slate-300">受け入れ枠（本数）</div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {[1, 2, 3, 4, 5].map((num) => (
+                            <Button
+                                key={num}
+                                size="sm"
+                                variant={maxCount === num ? "default" : "outline"}
+                                className={`h-8 w-full ${maxCount === num ? 'bg-primary text-primary-foreground' : ''}`}
+                                onClick={() => handleUpdate(num)}
+                                disabled={saving}
+                            >
+                                {num}
+                            </Button>
+                        ))}
+                    </div>
+                    {saving && (
+                        <div className="flex justify-center pt-1">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        </div>
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
     );
 }
