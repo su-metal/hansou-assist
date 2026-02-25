@@ -778,26 +778,14 @@ function ScheduleFormContent({ scheduleId, initialData }: ScheduleFormProps) {
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>種別</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                        <FormControl>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="種別を選択" />
-                                            </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                            <SelectItem
-                                                value="葬儀"
-                                                disabled={tomobikiWarning}
-                                            >
-                                                葬儀 {tomobikiWarning ? "(友引不可)" : ""}
-                                            </SelectItem>
-                                            <SelectItem
-                                                value="通夜"
-                                            >
-                                                通夜
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <FormControl>
+                                        <Input
+                                            {...field}
+                                            readOnly
+                                            className="bg-muted bg-opacity-50 pointer-events-none"
+                                            tabIndex={-1}
+                                        />
+                                    </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}

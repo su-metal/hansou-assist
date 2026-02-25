@@ -97,9 +97,9 @@ function ScheduleListContent() {
     const [isSyncing, setIsSyncing] = useState(false)
 
     // Touch state for swipe navigation
-    const [touchStart, setTouchStart] = useState<number | null>(null)
-    const [touchEnd, setTouchEnd] = useState<number | null>(null)
-    const minSwipeDistance = 50
+    const [touchStart, setTouchStart] = useState<{ x: number, y: number } | null>(null)
+    const [touchEnd, setTouchEnd] = useState<{ x: number, y: number } | null>(null)
+    const minSwipeDistance = 100
 
     // Match initial state from URL or LocalStorage synchronously (effect-like)
     useEffect(() => {
@@ -292,7 +292,10 @@ function ScheduleListContent() {
     // ... touch handlers ...
     const onTouchStart = (e: React.TouchEvent) => {
         setTouchEnd(null)
-        setTouchStart(e.targetTouches[0].clientX)
+        setTouchStart({
+            x: e.targetTouches[0].clientX,
+            y: e.targetTouches[0].clientY
+        })
     }
 
     const handleSyncCremation = async () => {
@@ -313,20 +316,27 @@ function ScheduleListContent() {
     }
 
     const onTouchMove = (e: React.TouchEvent) => {
-        setTouchEnd(e.targetTouches[0].clientX)
+        setTouchEnd({
+            x: e.targetTouches[0].clientX,
+            y: e.targetTouches[0].clientY
+        })
     }
 
     const onTouchEnd = () => {
         if (!touchStart || !touchEnd) return
-        const distance = touchStart - touchEnd
-        const isLeftSwipe = distance > minSwipeDistance
-        const isRightSwipe = distance < -minSwipeDistance
 
-        if (isLeftSwipe && activeFacilityIndex < facilities.length - 1) {
-            setActiveFacilityIndex(prev => prev + 1)
-        }
-        if (isRightSwipe && activeFacilityIndex > 0) {
-            setActiveFacilityIndex(prev => prev - 1)
+        const dx = touchStart.x - touchEnd.x
+        const dy = touchStart.y - touchEnd.y
+
+        // 水平方向の移動が垂直方向の1.5倍以上あり、かつ一定距離以上移動した場合のみスワイプと判定
+        if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > minSwipeDistance) {
+            if (dx > 0 && activeFacilityIndex < facilities.length - 1) {
+                // 左スワイプ (次へ)
+                setActiveFacilityIndex(prev => prev + 1)
+            } else if (dx < 0 && activeFacilityIndex > 0) {
+                // 右スワイプ (前へ)
+                setActiveFacilityIndex(prev => prev - 1)
+            }
         }
     }
 
@@ -542,16 +552,12 @@ function ScheduleListContent() {
 
                                         <div className="space-y-2">
                                             {hall.max_count === undefined && (
-                                                <div className="block border border-dashed border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 rounded-md p-3 mb-2">
-                                                    <div className="flex items-center justify-between text-slate-400 mb-2">
-                                                        <span className="font-medium text-lg">全時間帯</span>
-                                                        <span className="text-sm text-red-500 font-bold">予約不可</span>
-                                                    </div>
-                                                    <p className="text-xs text-red-600 dark:text-red-400 leading-relaxed">
-                                                        受け入れ枠が未設定のため登録できません。<br />
-                                                        先に<Link href={`/capacities?date=${format(currentDate, 'yyyy-MM-dd')}&hall_id=${hall.id}`} className="underline font-bold hover:text-red-800 transition-colors">受け入れ枠設定</Link>を行ってください。
-                                                    </p>
-                                                </div>
+                                                <InlineCapacityForm
+                                                    hallId={hall.id}
+                                                    dateStr={format(currentDate, 'yyyy-MM-dd')}
+                                                    onSaved={() => fetchSchedules(currentDate, undefined, true)}
+                                                    supabase={supabase}
+                                                />
                                             )}
                                             {hall.max_count !== undefined && (() => {
                                                 const existingFuneral = hall.schedules.find(s => s.slot_type === '葬儀')
@@ -714,3 +720,62 @@ function ScheduleListContent() {
     )
 }
 
+function InlineCapacityForm({ hallId, dateStr, onSaved, supabase }: { hallId: string, dateStr: string, onSaved: () => void, supabase: any }) {
+    const [count, setCount] = useState("1");
+    const [saving, setSaving] = useState(false);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const { error } = await supabase.from('daily_capacities').insert({
+                hall_id: hallId,
+                date: dateStr,
+                max_count: parseInt(count, 10)
+            });
+            if (error) throw error;
+            toast.success("受け入れ枠を設定しました");
+            onSaved();
+        } catch (err) {
+            console.error(err);
+            toast.error("設定に失敗しました");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="block border border-dashed border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 rounded-md p-4 mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-red-600 dark:text-red-400">受け入れ枠が未設定です</span>
+                    </div>
+                    <p className="text-xs text-red-500/80 dark:text-red-400/80">
+                        予約を受け付けるには、このホールの本日の登録可能件数を設定してください。
+                    </p>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto bg-white dark:bg-slate-900 p-1.5 rounded-md border border-red-100 dark:border-red-900/30 shadow-sm">
+                    <Select value={count} onValueChange={setCount}>
+                        <SelectTrigger className="w-[80px] h-8 text-sm bg-white dark:bg-slate-900">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {[1, 2, 3, 4, 5].map(num => (
+                                <SelectItem key={num} value={num.toString()}>{num}件</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Button
+                        size="sm"
+                        variant="default"
+                        className="h-8 bg-red-500 hover:bg-red-600 text-white min-w-[80px]"
+                        onClick={handleSave}
+                        disabled={saving}
+                    >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "設定する"}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
