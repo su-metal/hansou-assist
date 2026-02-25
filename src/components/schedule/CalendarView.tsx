@@ -199,25 +199,25 @@ export function CalendarView() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted p-2 rounded-lg">
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={handlePrev}>
+            <div className="flex flex-row flex-wrap items-center justify-between gap-1 sm:gap-4 bg-muted p-1 sm:p-2 rounded-lg">
+                <div className="flex items-center gap-1 sm:gap-2">
+                    <Button variant="outline" size="icon" onClick={handlePrev} className="h-8 w-8 sm:h-9 sm:w-9">
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <span className="text-lg font-bold min-w-[140px] text-center">
+                    <span className="text-sm sm:text-lg font-bold min-w-[100px] sm:min-w-[140px] text-center">
                         {format(currentDate, 'yyyy年 M月', { locale: ja })}
                     </span>
-                    <Button variant="outline" size="icon" onClick={handleNext}>
+                    <Button variant="outline" size="icon" onClick={handleNext} className="h-8 w-8 sm:h-9 sm:w-9">
                         <ChevronRight className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" onClick={handleToday}>
+                    <Button variant="ghost" onClick={handleToday} className="text-xs sm:text-sm px-2 sm:px-4">
                         今日
                     </Button>
                 </div>
 
-                <ToggleGroup type="single" value={mode} onValueChange={(v) => v && setMode(v as CalendarMode)}>
-                    <ToggleGroupItem value="week">週</ToggleGroupItem>
-                    <ToggleGroupItem value="month">月</ToggleGroupItem>
+                <ToggleGroup type="single" value={mode} onValueChange={(v) => v && setMode(v as CalendarMode)} className="bg-background/50 p-0.5 rounded-md">
+                    <ToggleGroupItem value="week" className="text-xs sm:text-sm h-7 sm:h-9 px-2 sm:px-3">週</ToggleGroupItem>
+                    <ToggleGroupItem value="month" className="text-xs sm:text-sm h-7 sm:h-9 px-2 sm:px-3">月</ToggleGroupItem>
                 </ToggleGroup>
             </div>
 

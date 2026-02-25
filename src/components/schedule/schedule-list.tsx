@@ -641,7 +641,13 @@ function ScheduleListContent() {
                                                                         </span>
                                                                         <span className="font-bold text-xl text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
                                                                     </div>
-                                                                    <div className="font-bold text-lg text-slate-500 dark:text-slate-400 mt-2 relative z-0">（斎場ブロック枠）</div>
+                                                                    <div className="font-bold text-lg text-slate-500 dark:text-slate-400 mt-2 relative z-0 flex items-center justify-between">
+                                                                        <span>（斎場ブロック枠）</span>
+                                                                        <span className="text-xs font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-2 py-1 rounded-full border border-primary/10">
+                                                                            変更する
+                                                                            <ChevronRight className="h-3 w-3" />
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         }
