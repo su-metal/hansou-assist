@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, ExternalLink, Edit2, X, Ban, PlusCircle } from 'lucide-react'
@@ -112,6 +112,9 @@ function ScheduleListContent() {
     const [isSlotMenuOpen, setIsSlotMenuOpen] = useState(false)
     const [touchEnd, setTouchEnd] = useState<{ x: number, y: number } | null>(null)
     const minSwipeDistance = 100
+    const initialScrollDone = useRef(false)
+    const [swipeOffset, setSwipeOffset] = useState(0)
+    const [isAnimating, setIsAnimating] = useState(false)
 
     // Match initial state from URL or LocalStorage synchronously (effect-like)
     useEffect(() => {
@@ -139,7 +142,7 @@ function ScheduleListContent() {
 
     // Fetch schedules with race condition prevention
     const fetchSchedules = useCallback(async (targetDate: Date, signal?: { ignore: boolean }, silent: boolean = false) => {
-        if (!silent) setLoading(true)
+        if (!silent && facilities.length === 0) setLoading(true)
         const startDateStr = format(targetDate, 'yyyy-MM-dd')
         const endDateStr = format(addDays(targetDate, 1), 'yyyy-MM-dd')
 
@@ -299,16 +302,34 @@ function ScheduleListContent() {
             }
             setIsInitialFacilitySet(true)
         }
-    }, [facilities, searchParams, isInitialFacilitySet])
+    }, [isInitialFacilitySet, facilities, searchParams])
 
-    // ... touch handlers ...
-    const onTouchStart = (e: React.TouchEvent) => {
-        setTouchEnd(null)
-        setTouchStart({
-            x: e.targetTouches[0].clientX,
-            y: e.targetTouches[0].clientY
-        })
-    }
+    // Scroll to specific hall if hall_id parameter exists
+    useEffect(() => {
+        if (!loading && isInitialFacilitySet && facilities.length > 0 && !initialScrollDone.current) {
+            const hallId = searchParams.get('hall_id')
+            if (hallId) {
+                // Wait a bit for the DOM to settle
+                const timer = setTimeout(() => {
+                    const element = document.getElementById(`hall-${hallId}`)
+                    if (element) {
+                        const headerOffset = 80; // Account for sticky header (h-16 = 64px) + margin
+                        const elementPosition = element.getBoundingClientRect().top;
+                        const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                        window.scrollTo({
+                            top: offsetPosition,
+                            behavior: 'smooth'
+                        });
+                        initialScrollDone.current = true;
+                    }
+                }, 100)
+                return () => clearTimeout(timer)
+            }
+        }
+    }, [loading, isInitialFacilitySet, facilities, searchParams])
+
+
 
     const handleSyncCremation = async () => {
         setIsSyncing(true)
@@ -375,29 +396,56 @@ function ScheduleListContent() {
         setIsSlotMenuOpen(false)
     }
 
-    const onTouchMove = (e: React.TouchEvent) => {
-        setTouchEnd({
+    // ... touch handlers ...
+    const onTouchStart = (e: React.TouchEvent) => {
+        setIsAnimating(false)
+        setTouchEnd(null)
+        setTouchStart({
             x: e.targetTouches[0].clientX,
             y: e.targetTouches[0].clientY
         })
     }
 
+    const onTouchMove = (e: React.TouchEvent) => {
+        if (!touchStart) return
+        const x = e.targetTouches[0].clientX
+        const y = e.targetTouches[0].clientY
+        setTouchEnd({ x, y })
+
+        const dx = touchStart.x - x
+        const dy = touchStart.y - y
+
+        // 横スワイプ（水平方向の動き）が垂直方向より大きい時だけ追従させる
+        if (Math.abs(dx) > Math.abs(dy)) {
+            setSwipeOffset(-dx)
+        }
+    }
+
     const onTouchEnd = () => {
-        if (!touchStart || !touchEnd) return
+        if (!touchStart || !touchEnd) {
+            setSwipeOffset(0)
+            return
+        }
 
         const dx = touchStart.x - touchEnd.x
         const dy = touchStart.y - touchEnd.y
 
+        setIsAnimating(true)
+
         // 水平方向の移動が垂直方向の1.5倍以上あり、かつ一定距離以上移動した場合のみスワイプと判定
         if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > minSwipeDistance) {
             if (dx > 0) {
-                // 左スワイプ (次へ)
-                setActiveFacilityIndex(prev => (prev + 1) % facilities.length)
+                // 左スワイプ (次へ) -> 翌日
+                handleNextDay()
             } else if (dx < 0) {
-                // 右スワイプ (前へ)
-                setActiveFacilityIndex(prev => (prev - 1 + facilities.length) % facilities.length)
+                // 右スワイプ (前へ) -> 前日
+                handlePrevDay()
             }
         }
+
+        setSwipeOffset(0)
+        setTouchStart(null)
+        setTouchEnd(null)
     }
 
     // Reset active index when facilities change or date changes
@@ -408,9 +456,29 @@ function ScheduleListContent() {
     }, [facilities, activeFacilityIndex])
 
 
-    const handlePrevDay = () => setCurrentDate(subDays(currentDate, 1))
-    const handleNextDay = () => setCurrentDate(addDays(currentDate, 1))
-    const handleToday = () => setCurrentDate(new Date())
+    const handlePrevDay = () => {
+        const params = new URLSearchParams(searchParams.toString())
+        const newDate = subDays(currentDate, 1)
+        params.set('date', format(newDate, 'yyyy-MM-dd'))
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+        setCurrentDate(newDate)
+    }
+
+    const handleNextDay = () => {
+        const params = new URLSearchParams(searchParams.toString())
+        const newDate = addDays(currentDate, 1)
+        params.set('date', format(newDate, 'yyyy-MM-dd'))
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+        setCurrentDate(newDate)
+    }
+
+    const handleToday = () => {
+        const params = new URLSearchParams(searchParams.toString())
+        const newDate = new Date()
+        params.set('date', format(newDate, 'yyyy-MM-dd'))
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+        setCurrentDate(newDate)
+    }
 
     const activeFacility = facilities[activeFacilityIndex]
 
@@ -489,354 +557,366 @@ function ScheduleListContent() {
                 </div>
             )}
 
-            {loading ? (
+            {loading && facilities.length === 0 ? (
                 <div className="flex justify-center p-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-            ) : !activeFacility ? (
+            ) : !activeFacility && !loading ? (
                 <div className="text-center p-8 text-gray-500">
                     施設が見つかりません
                 </div>
             ) : (
                 <div
-                    className="touch-pan-y"
+                    className={`touch-pan-y transition-opacity duration-200 ${loading ? 'opacity-70' : 'opacity-100'}`}
                     onTouchStart={onTouchStart}
                     onTouchMove={onTouchMove}
                     onTouchEnd={onTouchEnd}
                 >
-                    <Card key={activeFacility.id} className="overflow-hidden min-h-[50vh]">
-                        <CardHeader className="bg-slate-50 dark:bg-slate-900 py-3 flex flex-row justify-between items-center">
-                            <CardTitle className="text-lg font-medium">{activeFacility.name}</CardTitle>
-                            <span className="text-xs text-muted-foreground">
-                                {activeFacilityIndex + 1} / {facilities.length}
-                            </span>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            {GAMAGORI_FACILITY_IDS.includes(activeFacility.id) && (
-                                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-1.5 h-4 bg-primary rounded-full"></div>
-                                        <h3 className="font-bold text-sm text-slate-700 dark:text-slate-300">火葬場（とぼね）</h3>
-                                    </div>
-                                    <Dialog>
-                                        <DialogTrigger asChild>
-                                            <Button variant="outline" size="sm" className="h-8 gap-1 border-primary/20 hover:bg-primary/5">
-                                                空き状況を確認
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="w-[95vw] max-w-lg rounded-xl">
-                                            <DialogHeader>
-                                                <DialogTitle className="text-left flex items-center gap-4">
-                                                    <span>とぼね空き状況</span>
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        className="h-8 gap-1.5"
-                                                        onClick={handleSyncCremation}
-                                                        disabled={isSyncing}
-                                                    >
-                                                        <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                                        更新
+                    {activeFacility ? (
+                        <>
+                            <Card
+                                key={activeFacility.id}
+                                className={`overflow-hidden min-h-[50vh] ${isAnimating ? 'transition-transform duration-300' : ''}`}
+                                style={{ transform: `translateX(${swipeOffset}px)` }}
+                            >
+                                <CardHeader className="bg-slate-50 dark:bg-slate-900 py-3 flex flex-row justify-between items-center">
+                                    <CardTitle className="text-lg font-medium">{activeFacility.name}</CardTitle>
+                                    <span className="text-xs text-muted-foreground">
+                                        {activeFacilityIndex + 1} / {facilities.length}
+                                    </span>
+                                </CardHeader>
+                                <CardContent className="p-0">
+                                    {GAMAGORI_FACILITY_IDS.includes(activeFacility.id) && (
+                                        <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-4 bg-primary rounded-full"></div>
+                                                <h3 className="font-bold text-sm text-slate-700 dark:text-slate-300">火葬場（とぼね）</h3>
+                                            </div>
+                                            <Dialog>
+                                                <DialogTrigger asChild>
+                                                    <Button variant="outline" size="sm" className="h-8 gap-1 border-primary/20 hover:bg-primary/5">
+                                                        空き状況を確認
                                                     </Button>
-                                                </DialogTitle>
-                                            </DialogHeader>
+                                                </DialogTrigger>
+                                                <DialogContent className="w-[95vw] max-w-lg rounded-xl">
+                                                    <DialogHeader>
+                                                        <DialogTitle className="text-left flex items-center gap-4">
+                                                            <span>とぼね空き状況</span>
+                                                            <Button
+                                                                variant="secondary"
+                                                                size="sm"
+                                                                className="h-8 gap-1.5"
+                                                                onClick={handleSyncCremation}
+                                                                disabled={isSyncing}
+                                                            >
+                                                                <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                                                更新
+                                                            </Button>
+                                                        </DialogTitle>
+                                                    </DialogHeader>
 
-                                            <div className="py-2">
-                                                {cremationVacancies.length > 0 ? (
-                                                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                                                        {cremationVacancies.map((v, i) => (
-                                                            <div key={`${v.date}-${v.time}-${i}`} className="flex flex-col items-center py-2 px-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                                                                <span className="text-[10px] text-slate-500 font-medium mb-1">{format(new Date(v.date), 'M/d')}</span>
-                                                                <span className="text-[11px] text-slate-500 font-medium mb-1">{v.time}</span>
-                                                                <span className={`text-sm font-bold ${v.available_count > 0 ? 'text-primary' : 'text-slate-400'}`}>
-                                                                    {v.available_count > 0 ? `${v.available_count}件` : '×'}
+                                                    <div className="py-2">
+                                                        {cremationVacancies.length > 0 ? (
+                                                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                                                {cremationVacancies.map((v, i) => (
+                                                                    <div key={`${v.date}-${v.time}-${i}`} className="flex flex-col items-center py-2 px-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                                        <span className="text-[10px] text-slate-500 font-medium mb-1">{format(new Date(v.date), 'M/d')}</span>
+                                                                        <span className="text-[11px] text-slate-500 font-medium mb-1">{v.time}</span>
+                                                                        <span className={`text-sm font-bold ${v.available_count > 0 ? 'text-primary' : 'text-slate-400'}`}>
+                                                                            {v.available_count > 0 ? `${v.available_count}件` : '×'}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center py-10 bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                                                                <span className="text-sm text-slate-500 mb-2 font-medium">この日の空き枠データはありません</span>
+                                                                <span className="text-xs text-slate-400 text-center leading-relaxed">
+                                                                    ※公式予約システムでは当日から2日後以降の枠のみ表示される場合があります。<br />
+                                                                    情報が古い場合は右上の「更新」をタップしてください。
                                                                 </span>
                                                             </div>
-                                                        ))}
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <div className="flex flex-col items-center justify-center py-10 bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
-                                                        <span className="text-sm text-slate-500 mb-2 font-medium">この日の空き枠データはありません</span>
-                                                        <span className="text-xs text-slate-400 text-center leading-relaxed">
-                                                            ※公式予約システムでは当日から2日後以降の枠のみ表示される場合があります。<br />
-                                                            情報が古い場合は右上の「更新」をタップしてください。
-                                                        </span>
+
+                                                    <div className="text-right border-t border-slate-100 dark:border-slate-800 pt-3 mt-2">
+                                                        <a
+                                                            href="https://saijyo6.seagulloffice.com/tobone/user/cremationvacancy?172872981&c=1&f=1&__SANE_MI__=v1-1"
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
+                                                        >
+                                                            公式の予約システムを開く
+                                                            <ExternalLink className="h-3 w-3" />
+                                                        </a>
                                                     </div>
-                                                )}
-                                            </div>
-
-                                            <div className="text-right border-t border-slate-100 dark:border-slate-800 pt-3 mt-2">
-                                                <a
-                                                    href="https://saijyo6.seagulloffice.com/tobone/user/cremationvacancy?172872981&c=1&f=1&__SANE_MI__=v1-1"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
-                                                >
-                                                    公式の予約システムを開く
-                                                    <ExternalLink className="h-3 w-3" />
-                                                </a>
-                                            </div>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                            )}
-
-                            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {activeFacility.halls.map((hall) => (
-                                    <div key={hall.id} className="p-4 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <div className="mb-4 font-bold text-lg text-slate-900 dark:text-slate-100 border-l-4 border-primary pl-2 flex items-center">
-                                            <span>{hall.name}</span>
+                                                </DialogContent>
+                                            </Dialog>
                                         </div>
+                                    )}
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {[currentDate, addDays(currentDate, 1)].map((displayDate, index) => {
-                                                const dateStr = format(displayDate, 'yyyy-MM-dd')
-                                                const isTomobikiDay = tomobikiDates.includes(dateStr)
-                                                const daySchedules = hall.schedules.filter(s => s.date === dateStr)
+                                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {activeFacility.halls.map((hall) => (
+                                            <div id={`hall-${hall.id}`} key={hall.id} className="p-4 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                <div className="mb-4 font-bold text-lg text-slate-900 dark:text-slate-100 border-l-4 border-primary pl-2 flex items-center">
+                                                    <span>{hall.name}</span>
+                                                </div>
 
-                                                const existingFuneral = daySchedules.find(s => s.slot_type === '葬儀')
-                                                const existingWake = daySchedules.find(s => s.slot_type === '通夜')
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {[currentDate, addDays(currentDate, 1)].map((displayDate, index) => {
+                                                        const dateStr = format(displayDate, 'yyyy-MM-dd')
+                                                        const isTomobikiDay = tomobikiDates.includes(dateStr)
+                                                        const daySchedules = hall.schedules.filter(s => s.date === dateStr)
 
-                                                const hasFuneral = !!existingFuneral;
-                                                const hasWake = !!existingWake;
+                                                        const existingFuneral = daySchedules.find(s => s.slot_type === '葬儀')
+                                                        const existingWake = daySchedules.find(s => s.slot_type === '通夜')
 
-                                                const timeToMin = (t: string | null) => {
-                                                    if (!t) return null
-                                                    const [h, m] = t.split(':').map(Number)
-                                                    return h * 60 + m
-                                                }
+                                                        const hasFuneral = !!existingFuneral;
+                                                        const hasWake = !!existingWake;
 
-                                                // Determine the turnover constraint based on rules
-                                                const getTurnoverConstraint = (fac: Facility, fTime: string | null) => {
-                                                    if (!fTime) return { minWakeMin: null, isForbidden: false };
-                                                    const fMin = timeToMin(fTime);
-                                                    if (fMin === null) return { minWakeMin: null, isForbidden: false };
+                                                        const timeToMin = (t: string | null) => {
+                                                            if (!t) return null
+                                                            const [h, m] = t.split(':').map(Number)
+                                                            return h * 60 + m
+                                                        }
 
-                                                    const rules = Array.isArray(fac.turnover_rules) ? fac.turnover_rules : [];
-                                                    const exactRule = rules.find(r => r.funeral_time === fTime);
-                                                    if (exactRule) {
-                                                        return {
-                                                            minWakeMin: exactRule.is_forbidden ? null : timeToMin(exactRule.min_wake_time || null),
-                                                            isForbidden: !!exactRule.is_forbidden,
-                                                            matchedRule: exactRule
+                                                        // Determine the turnover constraint based on rules
+                                                        const getTurnoverConstraint = (fac: Facility, fTime: string | null) => {
+                                                            if (!fTime) return { minWakeMin: null, isForbidden: false };
+                                                            const fMin = timeToMin(fTime);
+                                                            if (fMin === null) return { minWakeMin: null, isForbidden: false };
+
+                                                            const rules = Array.isArray(fac.turnover_rules) ? fac.turnover_rules : [];
+                                                            const exactRule = rules.find(r => r.funeral_time === fTime);
+                                                            if (exactRule) {
+                                                                return {
+                                                                    minWakeMin: exactRule.is_forbidden ? null : timeToMin(exactRule.min_wake_time || null),
+                                                                    isForbidden: !!exactRule.is_forbidden,
+                                                                    matchedRule: exactRule
+                                                                };
+                                                            }
+
+                                                            const bMin = timeToMin(fac.funeral_block_time || null);
+                                                            if (bMin !== null && fMin >= bMin) {
+                                                                return { minWakeMin: null, isForbidden: true };
+                                                            }
+
+                                                            const iMin = (fac.turnover_interval_hours ?? 8) * 60;
+                                                            return { minWakeMin: fMin + iMin, isForbidden: false };
                                                         };
-                                                    }
 
-                                                    const bMin = timeToMin(fac.funeral_block_time || null);
-                                                    if (bMin !== null && fMin >= bMin) {
-                                                        return { minWakeMin: null, isForbidden: true };
-                                                    }
+                                                        // --- Funeral Logic ---
+                                                        let canAddFuneral = !isTomobikiDay && !existingFuneral;
+                                                        let funeralRestrictionDetail = "";
+                                                        if (isTomobikiDay && !existingFuneral) {
+                                                            funeralRestrictionDetail = "友引のため不可";
+                                                        }
 
-                                                    const iMin = (fac.turnover_interval_hours ?? 8) * 60;
-                                                    return { minWakeMin: fMin + iMin, isForbidden: false };
-                                                };
+                                                        // --- Wake Logic ---
+                                                        let canAddWake = !existingWake;
+                                                        let wakeRestrictionDetail = "";
+                                                        if (!existingWake && existingFuneral) {
+                                                            const { minWakeMin, isForbidden, matchedRule } = getTurnoverConstraint(activeFacility, existingFuneral.ceremony_time || null);
+                                                            if (isForbidden) {
+                                                                canAddWake = false;
+                                                                wakeRestrictionDetail = "ルールの設定により予約できません";
+                                                            } else if (minWakeMin !== null) {
+                                                                const h = Math.floor(minWakeMin / 60);
+                                                                const m = minWakeMin % 60;
+                                                                wakeRestrictionDetail = `${h}:${m.toString().padStart(2, '0')}以降で可能`;
+                                                            }
+                                                        }
 
-                                                // --- Funeral Logic ---
-                                                let canAddFuneral = !isTomobikiDay && !existingFuneral;
-                                                let funeralRestrictionDetail = "";
-                                                if (isTomobikiDay && !existingFuneral) {
-                                                    funeralRestrictionDetail = "友引のため不可";
-                                                }
+                                                        const renderScheduleBlock = (slotType: '葬儀' | '通夜', schedule: Schedule | undefined, canAdd: boolean, restrictionDetail: string) => {
+                                                            if (schedule) {
+                                                                if (schedule.status === 'unavailable') {
+                                                                    return (
+                                                                        <div
+                                                                            className="block border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 mb-2 flex flex-col relative overflow-hidden ring-1 ring-slate-200 dark:ring-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                                                            onClick={() => {
+                                                                                setSelectedSlot({
+                                                                                    date: dateStr,
+                                                                                    hallId: hall.id,
+                                                                                    hallName: hall.name,
+                                                                                    slotType: slotType,
+                                                                                    currentSchedule: schedule
+                                                                                })
+                                                                                setIsSlotMenuOpen(true)
+                                                                            }}
+                                                                        >
+                                                                            <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 15px, rgba(0,0,0,0.02) 15px, rgba(0,0,0,0.02) 16px)' }}></div>
+                                                                            <div className="flex justify-between items-start mb-1 z-10">
+                                                                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                                                    {slotType}（不可）
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex flex-col items-center justify-center py-4 relative z-10">
+                                                                                <div className="relative w-12 h-12 flex items-center justify-center text-slate-300 dark:text-slate-700">
+                                                                                    <div className="absolute w-full h-[2.5px] bg-current rotate-45 rounded-full"></div>
+                                                                                    <div className="absolute w-full h-[2.5px] bg-current -rotate-45 rounded-full"></div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                }
 
-                                                // --- Wake Logic ---
-                                                let canAddWake = !existingWake;
-                                                let wakeRestrictionDetail = "";
-                                                if (!existingWake && existingFuneral) {
-                                                    const { minWakeMin, isForbidden, matchedRule } = getTurnoverConstraint(activeFacility, existingFuneral.ceremony_time || null);
-                                                    if (isForbidden) {
-                                                        canAddWake = false;
-                                                        wakeRestrictionDetail = "ルールの設定により予約できません";
-                                                    } else if (minWakeMin !== null) {
-                                                        const h = Math.floor(minWakeMin / 60);
-                                                        const m = minWakeMin % 60;
-                                                        wakeRestrictionDetail = `${h}:${m.toString().padStart(2, '0')}以降で可能`;
-                                                    }
-                                                }
+                                                                if (schedule.status === 'external') {
+                                                                    return (
+                                                                        <div className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 mb-2 opacity-80" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}>
+                                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-xl" />
+                                                                            <div className="flex justify-between items-start mb-2 relative z-0">
+                                                                                <span className="flex items-center gap-1.5 flex-wrap">
+                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${slotType === '葬儀' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                                        {slotType}
+                                                                                    </span>
+                                                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                                                        他社予約
+                                                                                    </span>
+                                                                                </span>
+                                                                                <span className="font-bold text-lg leading-none text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
+                                                                            </div>
+                                                                            <div className="font-bold text-sm text-slate-500 dark:text-slate-400 mt-2 relative z-0 flex items-center justify-between">
+                                                                                <span>（斎場ブロック枠）</span>
+                                                                                <span className="text-[10px] font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
+                                                                                    変更する
+                                                                                    <ChevronRight className="h-2 w-2" />
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                }
 
-                                                const renderScheduleBlock = (slotType: '葬儀' | '通夜', schedule: Schedule | undefined, canAdd: boolean, restrictionDetail: string) => {
-                                                    if (schedule) {
-                                                        if (schedule.status === 'unavailable') {
+                                                                const colorIndex = schedule.color_index ?? getFamilyColorIndex(schedule.family_name);
+                                                                const colorMap = FAMILY_COLORS[colorIndex] || FAMILY_COLORS[0];
+
+                                                                const viewStartDateStr = format(currentDate, 'yyyy-MM-dd');
+                                                                return (
+                                                                    <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${viewStartDateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
+                                                                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${colorMap.border}`} />
+                                                                        <div className="flex justify-between items-start mb-1 pl-1.5">
+                                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${colorMap.badge}`}>
+                                                                                {slotType}
+                                                                            </span>
+                                                                            <span className="font-bold text-xl leading-none tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
+                                                                        </div>
+                                                                        <div className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1.5 flex items-center justify-between pl-1.5">
+                                                                            <span className="truncate pr-1">{schedule.family_name} 様</span>
+                                                                            <span className="text-[10px] whitespace-nowrap font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
+                                                                                変更する
+                                                                                <ChevronRight className="h-2 w-2" />
+                                                                            </span>
+                                                                        </div>
+                                                                        {schedule.remarks && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-md ml-1.5">{schedule.remarks}</div>}
+                                                                        {schedule.status === 'preparing' && <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mt-2 bg-amber-50 dark:bg-amber-900/20 inline-block px-1.5 py-0.5 rounded ml-1.5">※仮予約</div>}
+                                                                    </Link>
+                                                                );
+                                                            }
+
+                                                            // Empty state
+                                                            if (!canAdd) {
+                                                                const reason = restrictionDetail || '予約不可';
+                                                                return (
+                                                                    <div className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl p-3 mb-2 flex flex-col opacity-60 relative overflow-hidden">
+                                                                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${slotType === '葬儀' ? 'bg-slate-300 dark:bg-slate-700' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                                                        <div className="flex justify-between items-start mb-1 pl-1.5">
+                                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${slotType === '葬儀' ? 'bg-purple-100/50 text-purple-700/50 dark:bg-purple-900/10 dark:text-purple-300/50' : 'bg-orange-100/50 text-orange-700/50 dark:bg-orange-900/10 dark:text-orange-300/50'}`}>
+                                                                                {slotType}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-col items-center justify-center py-3 text-center px-2">
+                                                                            <span className="text-sm font-bold text-red-500 mb-0.5">予約不可</span>
+                                                                            <span className="text-[11px] font-medium text-slate-500 leading-tight">{reason}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+
                                                             return (
                                                                 <div
-                                                                    className="block border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 mb-2 flex flex-col relative overflow-hidden ring-1 ring-slate-200 dark:ring-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                                                    className="block border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-primary/50 transition-colors flex flex-col mb-2 group relative overflow-hidden cursor-pointer"
                                                                     onClick={() => {
                                                                         setSelectedSlot({
                                                                             date: dateStr,
                                                                             hallId: hall.id,
                                                                             hallName: hall.name,
-                                                                            slotType: slotType,
-                                                                            currentSchedule: schedule
+                                                                            slotType: slotType
                                                                         })
                                                                         setIsSlotMenuOpen(true)
                                                                     }}
                                                                 >
-                                                                    <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 15px, rgba(0,0,0,0.02) 15px, rgba(0,0,0,0.02) 16px)' }}></div>
-                                                                    <div className="flex justify-between items-start mb-1 z-10">
-                                                                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                                                            {slotType}（不可）
+                                                                    <div className={`absolute top-0 left-0 bottom-0 w-1 opacity-30 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-400' : 'bg-orange-400'}`} />
+                                                                    <div className="flex justify-between items-start mb-1 pl-1.5">
+                                                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold opacity-60 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
+                                                                            {slotType}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="flex flex-col items-center justify-center py-4 relative z-10">
-                                                                        <div className="relative w-12 h-12 flex items-center justify-center text-slate-300 dark:text-slate-700">
-                                                                            <div className="absolute w-full h-[2.5px] bg-current rotate-45 rounded-full"></div>
-                                                                            <div className="absolute w-full h-[2.5px] bg-current -rotate-45 rounded-full"></div>
-                                                                        </div>
+                                                                    <div className="flex flex-col items-center justify-center py-3 pl-1.5">
+                                                                        <span className="text-sm font-bold text-slate-400 group-hover:text-primary transition-colors">＋ 登録</span>
+                                                                        {restrictionDetail && <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 mt-0.5">{restrictionDetail}</span>}
                                                                     </div>
                                                                 </div>
                                                             );
-                                                        }
+                                                        };
 
-                                                        if (schedule.status === 'external') {
-                                                            return (
-                                                                <div className="block relative bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 mb-2 opacity-80" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)' }}>
-                                                                    <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${dateStr}`} className="absolute inset-0 z-10 bg-transparent hover:bg-slate-400/10 transition-colors rounded-xl" />
-                                                                    <div className="flex justify-between items-start mb-2 relative z-0">
-                                                                        <span className="flex items-center gap-1.5 flex-wrap">
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${slotType === '葬儀' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
-                                                                                {slotType}
-                                                                            </span>
-                                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                                                                他社予約
-                                                                            </span>
-                                                                        </span>
-                                                                        <span className="font-bold text-lg leading-none text-slate-500 dark:text-slate-400">{schedule.ceremony_time}</span>
-                                                                    </div>
-                                                                    <div className="font-bold text-sm text-slate-500 dark:text-slate-400 mt-2 relative z-0 flex items-center justify-between">
-                                                                        <span>（斎場ブロック枠）</span>
-                                                                        <span className="text-[10px] font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
-                                                                            変更する
-                                                                            <ChevronRight className="h-2 w-2" />
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        }
-
-                                                        const colorIndex = schedule.color_index ?? getFamilyColorIndex(schedule.family_name);
-                                                        const colorMap = FAMILY_COLORS[colorIndex] || FAMILY_COLORS[0];
-
-                                                        const viewStartDateStr = format(currentDate, 'yyyy-MM-dd');
                                                         return (
-                                                            <Link href={`/schedule/${schedule.id}?back_facility_id=${activeFacility.id}&back_date=${viewStartDateStr}`} className="block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm hover:border-primary transition-colors mb-2 group relative overflow-hidden">
-                                                                <div className={`absolute top-0 left-0 bottom-0 w-1 ${colorMap.border}`} />
-                                                                <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${colorMap.badge}`}>
-                                                                        {slotType}
-                                                                    </span>
-                                                                    <span className="font-bold text-xl leading-none tracking-tight text-slate-900 dark:text-slate-100">{schedule.ceremony_time}</span>
-                                                                </div>
-                                                                <div className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1.5 flex items-center justify-between pl-1.5">
-                                                                    <span className="truncate pr-1">{schedule.family_name} 様</span>
-                                                                    <span className="text-[10px] whitespace-nowrap font-bold text-primary flex items-center gap-0.5 bg-primary/5 px-1.5 py-0.5 rounded-full border border-primary/10">
-                                                                        変更する
-                                                                        <ChevronRight className="h-2 w-2" />
-                                                                    </span>
-                                                                </div>
-                                                                {schedule.remarks && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-md ml-1.5">{schedule.remarks}</div>}
-                                                                {schedule.status === 'preparing' && <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mt-2 bg-amber-50 dark:bg-amber-900/20 inline-block px-1.5 py-0.5 rounded ml-1.5">※仮予約</div>}
-                                                            </Link>
-                                                        );
-                                                    }
-
-                                                    // Empty state
-                                                    if (!canAdd) {
-                                                        const reason = restrictionDetail || '予約不可';
-                                                        return (
-                                                            <div className="block border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl p-3 mb-2 flex flex-col opacity-60 relative overflow-hidden">
-                                                                <div className={`absolute top-0 left-0 bottom-0 w-1 ${slotType === '葬儀' ? 'bg-slate-300 dark:bg-slate-700' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                                                                <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${slotType === '葬儀' ? 'bg-purple-100/50 text-purple-700/50 dark:bg-purple-900/10 dark:text-purple-300/50' : 'bg-orange-100/50 text-orange-700/50 dark:bg-orange-900/10 dark:text-orange-300/50'}`}>
-                                                                        {slotType}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex flex-col items-center justify-center py-3 text-center px-2">
-                                                                    <span className="text-sm font-bold text-red-500 mb-0.5">予約不可</span>
-                                                                    <span className="text-[11px] font-medium text-slate-500 leading-tight">{reason}</span>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    }
-
-                                                    return (
-                                                        <div
-                                                            className="block border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-primary/50 transition-colors flex flex-col mb-2 group relative overflow-hidden cursor-pointer"
-                                                            onClick={() => {
-                                                                setSelectedSlot({
-                                                                    date: dateStr,
-                                                                    hallId: hall.id,
-                                                                    hallName: hall.name,
-                                                                    slotType: slotType
-                                                                })
-                                                                setIsSlotMenuOpen(true)
-                                                            }}
-                                                        >
-                                                            <div className={`absolute top-0 left-0 bottom-0 w-1 opacity-30 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-400' : 'bg-orange-400'}`} />
-                                                            <div className="flex justify-between items-start mb-1 pl-1.5">
-                                                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold opacity-60 group-hover:opacity-100 transition-opacity ${slotType === '葬儀' ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}`}>
-                                                                    {slotType}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex flex-col items-center justify-center py-3 pl-1.5">
-                                                                <span className="text-sm font-bold text-slate-400 group-hover:text-primary transition-colors">＋ 登録</span>
-                                                                {restrictionDetail && <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 mt-0.5">{restrictionDetail}</span>}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                };
-
-                                                return (
-                                                    <div key={dateStr} className={`border border-slate-200 dark:border-slate-800 rounded-lg p-3 ${isTomobikiDay ? 'bg-amber-50/30 dark:bg-amber-900/5' : 'bg-white dark:bg-slate-900'} relative`}>
-                                                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-bold text-[15px]">{format(displayDate, 'M/d(E)', { locale: ja })}</span>
-                                                                {isTomobikiDay && <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1 rounded font-bold">友引</span>}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* ホール・日単位の制約告知 */}
-                                                        {(() => {
-                                                            if (hasFuneral) {
-                                                                return (
-                                                                    <div className="mb-3 px-2 py-1.5 bg-slate-50 dark:bg-slate-900/40 rounded text-[10px] text-slate-500 flex items-start gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800 leading-tight">
-                                                                        <span className="text-orange-500 mt-0.5">●</span>
-                                                                        <div>葬儀予約があるため、一部の時間帯で通夜の登録が制限されています</div>
+                                                            <div key={dateStr} className={`border border-slate-200 dark:border-slate-800 rounded-lg p-3 ${isTomobikiDay ? 'bg-amber-50/30 dark:bg-amber-900/5' : 'bg-white dark:bg-slate-900'} relative`}>
+                                                                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="font-bold text-[15px]">{format(displayDate, 'M/d(E)', { locale: ja })}</span>
+                                                                        {isTomobikiDay && <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1 rounded font-bold">友引</span>}
                                                                     </div>
-                                                                );
-                                                            }
-                                                            if (hasWake) {
-                                                                return (
-                                                                    <div className="mb-3 px-2 py-1.5 bg-slate-50 dark:bg-slate-900/40 rounded text-[10px] text-slate-500 flex items-start gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800 leading-tight">
-                                                                        <span className="text-purple-500 mt-0.5">●</span>
-                                                                        <div>通夜予約があるため、一部の時間帯で葬儀の登録が制限されています</div>
-                                                                    </div>
-                                                                );
-                                                            }
-                                                            return null;
-                                                        })()}
+                                                                </div>
 
-                                                        <div className="space-y-1.5">
-                                                            <div className="flex flex-col gap-2">
-                                                                {renderScheduleBlock('葬儀', existingFuneral, canAddFuneral, funeralRestrictionDetail)}
-                                                                {renderScheduleBlock('通夜', existingWake, canAddWake, wakeRestrictionDetail)}
+                                                                {/* ホール・日単位の制約告知 */}
+                                                                {(() => {
+                                                                    if (hasFuneral) {
+                                                                        return (
+                                                                            <div className="mb-3 px-2 py-1.5 bg-slate-50 dark:bg-slate-900/40 rounded text-[10px] text-slate-500 flex items-start gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800 leading-tight">
+                                                                                <span className="text-orange-500 mt-0.5">●</span>
+                                                                                <div>葬儀予約があるため、一部の時間帯で通夜の登録が制限されています</div>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (hasWake) {
+                                                                        return (
+                                                                            <div className="mb-3 px-2 py-1.5 bg-slate-50 dark:bg-slate-900/40 rounded text-[10px] text-slate-500 flex items-start gap-1.5 ring-1 ring-slate-200 dark:ring-slate-800 leading-tight">
+                                                                                <span className="text-purple-500 mt-0.5">●</span>
+                                                                                <div>通夜予約があるため、一部の時間帯で葬儀の登録が制限されています</div>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    return null;
+                                                                })()}
+
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex flex-col gap-2">
+                                                                        {renderScheduleBlock('葬儀', existingFuneral, canAddFuneral, funeralRestrictionDetail)}
+                                                                        {renderScheduleBlock('通夜', existingWake, canAddWake, wakeRestrictionDetail)}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
+                                </CardContent>
+                            </Card>
+                            <div className="flex justify-center mt-2 gap-1">
+                                {facilities.map((_, idx) => (
+                                    <div
+                                        key={idx}
+                                        className={`h-1.5 w-1.5 rounded-full ${idx === activeFacilityIndex ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                    />
                                 ))}
                             </div>
-                        </CardContent>
-                    </Card>
-                    <div className="flex justify-center mt-2 gap-1">
-                        {facilities.map((_, idx) => (
-                            <div
-                                key={idx}
-                                className={`h-1.5 w-1.5 rounded-full ${idx === activeFacilityIndex ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'}`}
-                            />
-                        ))}
-                    </div>
+                        </>
+                    ) : (
+                        <div className="text-center p-8 text-gray-500">
+                            施設データがありません
+                        </div>
+                    )}
                 </div>
             )}
             {/* スロット操作メニュー */}

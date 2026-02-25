@@ -285,11 +285,11 @@ export function CalendarView() {
                                                 const rokuyo = rokuyoData[dateStr]
                                                 const isTomobiki = rokuyo?.is_tomobiki
                                                 return (
-                                                    <td key={dateStr} className={`p-1 border relative min-h-[80px] align-middle ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''
+                                                    <td key={dateStr} className={`border relative ${isTomobiki ? 'bg-gray-50 dark:bg-gray-900/30' : ''
                                                         } group`}>
                                                         {/* Cell Background Link to List View */}
                                                         <Link
-                                                            href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                            href={`/schedule?date=${dateStr}&facility_id=${facility.id}&hall_id=${hall.id}`}
                                                             className="absolute inset-0 z-0 bg-transparent hover:bg-slate-400/5 transition-colors"
                                                         />
 
@@ -299,17 +299,17 @@ export function CalendarView() {
                                                             </div>
                                                         )}
 
-                                                        <div className="relative flex flex-col gap-1 z-10 pointer-events-none">
+                                                        <div className="relative min-h-[84px] flex flex-col justify-center gap-1 p-1 z-10 pointer-events-none">
                                                             {daySchedules.map(schedule => {
                                                                 const colorIndex = schedule.color_index ?? getFamilyColorIndex(schedule.family_name);
                                                                 const colorMap = FAMILY_COLORS[colorIndex] || FAMILY_COLORS[0];
 
                                                                 return (
                                                                     <Link
-                                                                        href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
+                                                                        href={`/schedule?date=${dateStr}&facility_id=${facility.id}&hall_id=${hall.id}`}
                                                                         key={schedule.id}
                                                                         className={`
-                                                                            block rounded px-1.5 py-1 text-[10px] sm:text-[11px] font-medium text-white pointer-events-auto transition-colors
+                                                                            block rounded px-1.5 py-1 text-[12px] sm:text-[13px] font-medium text-white pointer-events-auto transition-colors
                                                                             ${schedule.status === 'external' ? 'bg-slate-400 hover:bg-slate-500' : colorMap.border + ' hover:brightness-110'}
                                                                         `}
                                                                         title={`${schedule.ceremony_time} ${schedule.slot_type} ${schedule.family_name || ''}`}
@@ -322,9 +322,11 @@ export function CalendarView() {
                                                                             </div>
                                                                         ) : (
                                                                             <div className="flex flex-col leading-tight">
-                                                                                <div className="flex items-center gap-1 opacity-90">
-                                                                                    <span>{schedule.ceremony_time}</span>
-                                                                                    <span>{schedule.slot_type === '通夜' ? '通' : '葬'}</span>
+                                                                                <div className="flex items-center gap-1 mb-0.5 opacity-90">
+                                                                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-white text-slate-900 text-[10px] font-black shrink-0 shadow-sm border border-black/5">
+                                                                                        {schedule.slot_type === '通夜' ? '通' : '葬'}
+                                                                                    </span>
+                                                                                    <span className="font-bold">{schedule.ceremony_time}</span>
                                                                                 </div>
                                                                                 <div className="truncate font-bold">
                                                                                     {schedule.family_name} 様
@@ -334,11 +336,13 @@ export function CalendarView() {
                                                                     </Link>
                                                                 );
                                                             })}
+                                                        </div>
 
-                                                            {/* New Reservation Link */}
+                                                        {/* New Reservation Link - Absolute Bottom */}
+                                                        <div className="absolute bottom-1 left-1 right-1 z-20 opacity-0 group-hover:opacity-100 transition-all pointer-events-auto">
                                                             <Link
-                                                                href={`/schedule?date=${dateStr}&facility_id=${facility.id}`}
-                                                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center py-1 mt-1 text-xs text-muted-foreground border border-dashed border-transparent hover:border-slate-300 dark:hover:border-slate-700 rounded transition-all pointer-events-auto bg-white/80 dark:bg-slate-900/80"
+                                                                href={`/schedule?date=${dateStr}&facility_id=${facility.id}&hall_id=${hall.id}`}
+                                                                className="flex items-center justify-center py-0.5 text-[9px] text-muted-foreground border border-dashed border-slate-300 dark:border-slate-700 rounded bg-white/90 dark:bg-slate-900/90 shadow-sm hover:border-primary/50"
                                                             >
                                                                 ＋ 予約
                                                             </Link>
