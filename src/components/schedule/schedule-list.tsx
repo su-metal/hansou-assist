@@ -335,12 +335,12 @@ function ScheduleListContent() {
 
         // 水平方向の移動が垂直方向の1.5倍以上あり、かつ一定距離以上移動した場合のみスワイプと判定
         if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > minSwipeDistance) {
-            if (dx > 0 && activeFacilityIndex < facilities.length - 1) {
+            if (dx > 0) {
                 // 左スワイプ (次へ)
-                setActiveFacilityIndex(prev => prev + 1)
-            } else if (dx < 0 && activeFacilityIndex > 0) {
+                setActiveFacilityIndex(prev => (prev + 1) % facilities.length)
+            } else if (dx < 0) {
                 // 右スワイプ (前へ)
-                setActiveFacilityIndex(prev => prev - 1)
+                setActiveFacilityIndex(prev => (prev - 1 + facilities.length) % facilities.length)
             }
         }
     }
