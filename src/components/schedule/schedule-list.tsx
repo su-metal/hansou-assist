@@ -220,6 +220,9 @@ function ScheduleListContent() {
                 if (!signal?.ignore) {
                     // Sort data to ensure 9:30 comes before 10:00 (string sorting issue)
                     const sortedData = (cremationData || []).sort((a: CremationVacancy, b: CremationVacancy) => {
+                        if (a.date !== b.date) {
+                            return a.date.localeCompare(b.date)
+                        }
                         const pad = (s: string) => s.length === 4 ? '0' + s : s
                         return pad(a.time).localeCompare(pad(b.time))
                     })
@@ -617,16 +620,28 @@ function ScheduleListContent() {
 
                                                     <div className="py-2">
                                                         {cremationVacancies.length > 0 ? (
-                                                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                                                                {cremationVacancies.map((v, i) => (
-                                                                    <div key={`${v.date}-${v.time}-${i}`} className="flex flex-col items-center py-2 px-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                                                                        <span className="text-[10px] text-slate-500 font-medium mb-1">{format(new Date(v.date), 'M/d')}</span>
-                                                                        <span className="text-[11px] text-slate-500 font-medium mb-1">{v.time}</span>
-                                                                        <span className={`text-sm font-bold ${v.available_count > 0 ? 'text-primary' : 'text-slate-400'}`}>
-                                                                            {v.available_count > 0 ? `${v.available_count}件` : '×'}
-                                                                        </span>
-                                                                    </div>
-                                                                ))}
+                                                            <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-1">
+                                                                {Array.from(new Set(cremationVacancies.map(v => v.date))).sort().map(dateStr => {
+                                                                    const dayVacancies = cremationVacancies.filter(v => v.date === dateStr);
+                                                                    return (
+                                                                        <div key={dateStr} className="space-y-2">
+                                                                            <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center gap-2">
+                                                                                <CalendarIcon className="h-4 w-4 text-primary/70" />
+                                                                                {format(new Date(dateStr), 'M月d日 (E)', { locale: ja })}
+                                                                            </h4>
+                                                                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                                                                {dayVacancies.map((v, i) => (
+                                                                                    <div key={`${v.date}-${v.time}-${i}`} className="flex flex-col items-center py-2 px-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+                                                                                        <span className="text-[11px] text-slate-500 font-medium mb-1">{v.time}</span>
+                                                                                        <span className={`text-sm font-bold ${v.available_count > 0 ? 'text-primary' : 'text-slate-400'}`}>
+                                                                                            {v.available_count > 0 ? `${v.available_count}件` : '×'}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
                                                             </div>
                                                         ) : (
                                                             <div className="flex flex-col items-center justify-center py-10 bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
